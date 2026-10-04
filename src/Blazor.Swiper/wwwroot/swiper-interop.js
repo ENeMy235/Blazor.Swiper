@@ -43,6 +43,7 @@ function hostState(element) {
         anchorObserver: null,
         slideSetObserver: null,
         slideResizeObserver: null,
+        endScrollMove: null,
         dotNetRef: null,
         appliedOptions: {},
         eventThrottleMs: 0,
@@ -510,7 +511,7 @@ export function slideTo(element, index, speed) {
 
     switch (navigationMode(swiper.params)) {
         case "scroll":
-            scrollToSlide(swiper, index, speed);
+            scrollToSlide(element, swiper, index, speed);
             break;
         case "loop":
             swiper.slideToLoop(index, optionalSpeed(speed));
@@ -525,7 +526,17 @@ export function slideTo(element, index, speed) {
 // That is unusable under scroll-snap: `scroll-snap-type: mandatory` yanks every intermediate position back
 // to a snap point, and any re-render during the scroll cancels it outright, leaving the slider where it
 // started. Writing scrollLeft per frame is not cancellable, so the animation always completes.
-function scrollToSlide(swiper, index, speed) {
+//
+// There is one move per slider, and a new request ends the one in flight before anything else. Left
+// running, the older move keeps writing its own target every frame and can be the one that lands last - a
+// request that finds the slider already on its slide starts no animation at all, so nothing would even
+// compete with it. Each move also hands scroll-snap back to the value it found, which for a move started
+// during another is that one's "none": snapping would then stay off for good, and the slider would rest
+// wherever a swipe is released, between two slides.
+function scrollToSlide(element, swiper, index, speed) {
+    const state = hostState(element);
+    state.endScrollMove?.();
+
     const wrapper = swiper.wrapperEl;
     const start = wrapper.scrollLeft;
     const plan = scrollPlan(start, swiper.slides[index]?.offsetLeft ?? 0, speed, swiper.params.speed);
@@ -542,17 +553,47 @@ function scrollToSlide(swiper, index, speed) {
     const previousSnapType = wrapper.style.scrollSnapType;
     wrapper.style.scrollSnapType = "none";
 
-    const startTime = performance.now();
+    let frameRequest = 0;
+    let isClockArmed = false;
+    let startTime = null;
+
+    const end = () => {
+        cancelAnimationFrame(frameRequest);
+        if (state.endScrollMove === end) {
+            state.endScrollMove = null;
+        }
+        wrapper.style.scrollSnapType = previousSnapType;
+    };
+
     const step = (now) => {
+        if (!isLiveSwiper(element, swiper)) {
+            end();
+            return;
+        }
+
+        // The clock starts on the second frame rather than at the request. A host usually asks for the move
+        // from the same event that re-renders its slides, so the main thread is gone for a while right after
+        // the call and the first frame then has that render to lay out and paint. A clock already running
+        // across either would find most of the duration spent and jump instead of animating.
+        if (!isClockArmed) {
+            isClockArmed = true;
+            frameRequest = requestAnimationFrame(step);
+            return;
+        }
+
+        startTime ??= now;
         const elapsed = now - startTime;
         wrapper.scrollLeft = scrollPositionAt(start, plan.distance, elapsed, plan.duration);
         if (elapsed < plan.duration) {
-            requestAnimationFrame(step);
-        } else {
-            wrapper.style.scrollSnapType = previousSnapType;
+            frameRequest = requestAnimationFrame(step);
+            return;
         }
+
+        end();
     };
-    requestAnimationFrame(step);
+
+    state.endScrollMove = end;
+    frameRequest = requestAnimationFrame(step);
 }
 
 export function slideNext(element, speed) {
@@ -972,6 +1013,7 @@ export function destroy(element) {
         state.anchorObserver?.disconnect();
         state.slideSetObserver?.disconnect();
         state.slideResizeObserver?.disconnect();
+        state.endScrollMove?.();
 
         for (const { domEvent, handler } of state.listeners) {
             element.removeEventListener(domEvent, handler);
