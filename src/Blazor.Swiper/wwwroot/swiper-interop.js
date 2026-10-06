@@ -308,6 +308,7 @@ function attachInternalListeners(element) {
     // programmatic move in the first place. Cleared on transitionend, since the snap outlives the pointer.
     listen(element, "sliderFirstMove", () => {
         hostState(element).isUserDriven = true;
+        abandonScrollMove(element);
     });
 
     listen(element, "transitionEnd", (event) => {
@@ -522,7 +523,7 @@ export function slideTo(element, index, speed) {
     }
 }
 
-// cssMode moves the slider by scrolling the wrapper, and Swiper drives that with a native smooth scroll.
+/// cssMode moves the slider by scrolling the wrapper, and Swiper drives that with a native smooth scroll.
 // That is unusable under scroll-snap: `scroll-snap-type: mandatory` yanks every intermediate position back
 // to a snap point, and any re-render during the scroll cancels it outright, leaving the slider where it
 // started. Writing scrollLeft per frame is not cancellable, so the animation always completes.
@@ -533,6 +534,11 @@ export function slideTo(element, index, speed) {
 // move also hands scroll-snap back to the value it found, which for a move started during another is that
 // one's "none": snapping would then stay off for good, and the slider would rest wherever a swipe is
 // released, between two slides.
+//
+// Writing the offset every frame also overwrites whatever else moves the slider meanwhile, so the move
+// steps aside for the things it knows about: the wrapper's other navigation calls and an anchor end it
+// (abandonScrollMove), as do a drag and a sideways wheel. Swiper's own arrows, pagination and keyboard do
+// not pass through here and are still overwritten until the move is done.
 function scrollToSlide(element, swiper, index, speed) {
     const state = hostState(element);
     const wrapper = swiper.wrapperEl;
@@ -541,7 +547,7 @@ function scrollToSlide(element, swiper, index, speed) {
     // layout read after that re-snaps the wrapper on the spot - so this move would start from the nearest
     // slide rather than from where the slider is, a jump that can point away from the new target.
     const start = wrapper.scrollLeft;
-    const plan = scrollPlan(start, swiper.slides[index]?.offsetLeft ?? 0, speed, swiper.params.speed);
+    const plan = scrollPlan(start, slideOffset(swiper, index), speed, swiper.params.speed);
     state.endScrollMove?.();
 
     if (plan.kind === "none") {
@@ -562,10 +568,18 @@ function scrollToSlide(element, swiper, index, speed) {
 
     const end = () => {
         cancelAnimationFrame(frameRequest);
+        wrapper.removeEventListener("wheel", onWheel);
         if (state.endScrollMove === end) {
             state.endScrollMove = null;
         }
         wrapper.style.scrollSnapType = previousSnapType;
+    };
+
+    // Only a sideways wheel scrolls the slider. An ordinary one is the page scrolling past underneath.
+    const onWheel = (event) => {
+        if (event.deltaX !== 0 || event.shiftKey) {
+            abandonScrollMove(element);
+        }
     };
 
     const step = (now) => {
@@ -584,9 +598,12 @@ function scrollToSlide(element, swiper, index, speed) {
             return;
         }
 
+        // The target is measured every frame rather than once at the request: a resize part-way moves the
+        // slides, and the offset taken before it then belongs to a different slide, or to none.
         startTime ??= now;
         const elapsed = now - startTime;
-        wrapper.scrollLeft = scrollPositionAt(start, plan.distance, elapsed, plan.duration);
+        const distance = slideOffset(swiper, index) - start;
+        wrapper.scrollLeft = scrollPositionAt(start, distance, elapsed, plan.duration);
         if (elapsed < plan.duration) {
             frameRequest = requestAnimationFrame(step);
             return;
@@ -596,27 +613,59 @@ function scrollToSlide(element, swiper, index, speed) {
     };
 
     state.endScrollMove = end;
+    wrapper.addEventListener("wheel", onWheel, { passive: true });
     frameRequest = requestAnimationFrame(step);
 }
 
+function slideOffset(swiper, index) {
+    return swiper.slides[index]?.offsetLeft ?? 0;
+}
+
+// Ends the cssMode move in flight because something other than a newer slideTo is taking the slider over,
+// and stands its intent down with it: the slider is no longer heading for that slide, so a later resize
+// must not put it there.
+function abandonScrollMove(element) {
+    const state = element?.__blazorSwiper;
+    if (!state?.endScrollMove) {
+        return;
+    }
+
+    state.endScrollMove();
+    state.intendedIndex = null;
+}
+
+// Swiper's own navigation, for the calls that have no route of their own here. Swiper reads the slider's
+// position while the move in flight still has scroll-snap suspended, and the move is ended only afterwards -
+// the other way round, the restored snapping pulls the slider onto the nearest slide before Swiper has
+// looked at it.
+function navigate(element, move) {
+    const swiper = liveSwiper(element);
+    if (!swiper) {
+        return;
+    }
+
+    move(swiper);
+    abandonScrollMove(element);
+}
+
 export function slideNext(element, speed) {
-    liveSwiper(element)?.slideNext(optionalSpeed(speed));
+    navigate(element, swiper => swiper.slideNext(optionalSpeed(speed)));
 }
 
 export function slidePrev(element, speed) {
-    liveSwiper(element)?.slidePrev(optionalSpeed(speed));
+    navigate(element, swiper => swiper.slidePrev(optionalSpeed(speed)));
 }
 
 export function slideReset(element, speed) {
-    liveSwiper(element)?.slideReset(optionalSpeed(speed));
+    navigate(element, swiper => swiper.slideReset(optionalSpeed(speed)));
 }
 
 export function slideToClosest(element, speed) {
-    liveSwiper(element)?.slideToClosest(optionalSpeed(speed));
+    navigate(element, swiper => swiper.slideToClosest(optionalSpeed(speed)));
 }
 
 export function slideToClickedSlide(element) {
-    liveSwiper(element)?.slideToClickedSlide();
+    navigate(element, swiper => swiper.slideToClickedSlide());
 }
 
 // Swiper's resize handling ends by re-anchoring onto the index it holds, and it defers that by a frame.
@@ -636,6 +685,11 @@ function attachIntendedIndexGuard(element, swiper) {
 
         requestAnimationFrame(() => {
             if (!isLiveSwiper(element, swiper)) {
+                return;
+            }
+            // A cssMode move still in flight follows its slide through the resize by itself, and writes its
+            // own offset on the next frame anyway - anchoring here would only flash the target for one.
+            if (state.endScrollMove) {
                 return;
             }
             if (shouldReanchor(swiper.realIndex, state.intendedIndex, state.isUserDriven)) {
@@ -762,6 +816,7 @@ export function armAnchor(element, index) {
             if (!isLiveSwiper(element, anchorSwiper)) {
                 return;
             }
+            abandonScrollMove(element);
             applyAnchor(anchorSwiper, anchorIndex);
         });
     }
@@ -776,6 +831,7 @@ export function updateAndAnchor(element, index) {
     if (!swiper) {
         return;
     }
+    abandonScrollMove(element);
     applyAnchor(swiper, index);
 }
 
