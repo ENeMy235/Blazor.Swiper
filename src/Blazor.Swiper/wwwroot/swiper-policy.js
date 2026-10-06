@@ -271,6 +271,20 @@ export function scrollPositionAt(start, distance, elapsed, duration) {
     return start + distance * eased;
 }
 
+/**
+ * Whether a call to Swiper's `slideTo` is Swiper settling itself rather than the slider being sent
+ * somewhere.
+ *
+ * After a resize or an update Swiper re-seats itself on the slide it already holds, and it makes
+ * that call the same way every time: instantly, and flagged internal. Those must not end a cssMode
+ * move in flight - the slider has not been given a new destination, and the move follows its slide
+ * through the resize by itself. Everything else is navigation, whoever asked: an arrow, a bullet
+ * and a key leave the flag unset, and autoplay sets it but travels at a speed.
+ */
+export function isSwiperCorrection(speed, isInternal) {
+    return speed === 0 && isInternal === true;
+}
+
 // --- events -------------------------------------------------------------------------------------
 
 /**

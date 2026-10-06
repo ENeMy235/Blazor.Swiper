@@ -253,50 +253,30 @@ public sealed class SwiperCssModeMoveTests(DemoFixture fixture)
     }
 
     [Theory]
-    [InlineData("wrapper.dispatchEvent(new WheelEvent('wheel', { deltaX: 40, bubbles: true }));")]
+    [InlineData("wrapper.dispatchEvent(new WheelEvent('wheel', { deltaX: 40, bubbles: true, cancelable: true }));")]
+    [InlineData("wrapper.dispatchEvent(new WheelEvent('wheel', { deltaY: 40, bubbles: true, cancelable: true }));")]
     [InlineData("host.swiper.emit('sliderFirstMove');")]
     public async Task UserScroll_DuringAMove_HandsTheSliderBackToTheUser(string userScroll)
     {
-        // Arrange - a sideways wheel, and the first movement of a drag as Swiper announces it
+        // Arrange - the wheel on either axis, which Swiper turns into a step of its own in cssMode,
+        // and the first movement of a drag as Swiper announces it
         await fixture.NavigateToStoryAsync(CssModeStory, CssModeState);
 
         // Act
         var result = await EvaluateAsync($@"
             const slideOffsets = Array.from(host.swiper.slides, slide => slide.offsetLeft);
-            interop.slideTo(host, 3, 1000);
+            interop.slideTo(host, 4, 1500);
             await wait(200);
             {userScroll}
             const snapTypeMidMove = wrapper.style.scrollSnapType;
-            await wait(1400);
-            return read({{ snapTypeMidMove, slideOffsets }});");
+            await wait(2000);
+            return read({{ snapTypeMidMove, slideOffsets, otherSlideScrollLeft: offsetOf(4) }});");
 
         // Assert - snapping is back at once rather than when the move would have finished, and
-        // the slider rests on a slide
+        // the slider rests on a slide that is not the one the move was heading for
         Assert.Equal(string.Empty, result.SnapTypeMidMove);
         Assert.Contains(result.ScrollLeft, result.SlideOffsets ?? []);
-        Assert.Equal(string.Empty, result.InlineSnapType);
-        fixture.AssertNoJsErrors();
-    }
-
-    [Fact]
-    public async Task Wheel_VerticalDuringAMove_LeavesTheMoveRunning()
-    {
-        // Arrange
-        await fixture.NavigateToStoryAsync(CssModeStory, CssModeState);
-
-        // Act - the page scrolling past under the pointer, which does not move the slider
-        var result = await EvaluateAsync(@"
-            interop.slideTo(host, 3, 1000);
-            await wait(200);
-            wrapper.dispatchEvent(new WheelEvent('wheel', { deltaY: 40, bubbles: true }));
-            const snapTypeMidMove = wrapper.style.scrollSnapType;
-            await wait(1400);
-            return read({ snapTypeMidMove, expectedScrollLeft: offsetOf(3) });");
-
-        // Assert
-        Assert.Equal("none", result.SnapTypeMidMove);
-        Assert.Equal(result.ExpectedScrollLeft, result.ScrollLeft);
-        Assert.Equal(3, result.RealIndex);
+        Assert.NotEqual(result.OtherSlideScrollLeft, result.ScrollLeft);
         Assert.Equal(string.Empty, result.InlineSnapType);
         fixture.AssertNoJsErrors();
     }
@@ -321,6 +301,76 @@ public sealed class SwiperCssModeMoveTests(DemoFixture fixture)
         Assert.Equal(string.Empty, result.SnapTypeMidMove);
         Assert.Equal(result.ExpectedScrollLeft, result.ScrollLeft);
         Assert.Equal(1, result.RealIndex);
+        fixture.AssertNoJsErrors();
+    }
+
+    [Theory]
+    [InlineData("controlled.shadowRoot.querySelector('.swiper-button-next').click(); expectedIndex = activeIndexAtInput + 1;")]
+    [InlineData("pressKey(39); expectedIndex = activeIndexAtInput + 1;")]
+    [InlineData("controlled.shadowRoot.querySelector('.swiper-pagination-bullet').click(); expectedIndex = 0;")]
+    public async Task SwiperControl_UsedDuringAMove_MovesTheSlider(string useControl)
+    {
+        // Arrange - the next arrow, the right arrow key and the first pagination bullet. The story's
+        // slider has none of the three, so the scenario builds one that does.
+        await fixture.NavigateToStoryAsync(CssModeStory, CssModeState);
+
+        // Act - Swiper handles each of these itself, without a call into the interop module
+        var result = await EvaluateAsync($@"
+            const stage = document.createElement('div');
+            stage.style.width = '420px';
+            document.body.appendChild(stage);
+
+            const controlled = document.createElement('swiper-container');
+            controlled.setAttribute('init', 'false');
+            for (let i = 0; i < 5; i++) {{
+                const slide = document.createElement('swiper-slide');
+                slide.textContent = `Slide ${{i}}`;
+                slide.style.height = '120px';
+                controlled.appendChild(slide);
+            }}
+            stage.appendChild(controlled);
+
+            const options = {{
+                cssMode: true,
+                spaceBetween: 16,
+                navigation: true,
+                pagination: {{ clickable: true }},
+                keyboard: {{ enabled: true }}
+            }};
+            await interop.initialize(controlled, options, null, [], 0, false);
+            const track = controlled.swiper.wrapperEl;
+
+            // Swiper reads the legacy keyCode, which a constructed KeyboardEvent leaves at 0.
+            const pressKey = (keyCode) => {{
+                const keyDown = new KeyboardEvent('keydown', {{ bubbles: true }});
+                Object.defineProperty(keyDown, 'keyCode', {{ value: keyCode }});
+                document.dispatchEvent(keyDown);
+            }};
+
+            interop.slideTo(controlled, 4, 1500);
+            await wait(250);
+            const activeIndexAtInput = controlled.swiper.activeIndex;
+            let expectedIndex = -1;
+            {useControl}
+            await wait(2200);
+
+            const result = JSON.stringify({{
+                scrollLeft: Math.round(track.scrollLeft),
+                inlineSnapType: track.style.scrollSnapType,
+                computedSnapType: getComputedStyle(track).scrollSnapType,
+                realIndex: controlled.swiper.realIndex,
+                expectedIndex,
+                expectedScrollLeft: controlled.swiper.slides[expectedIndex].offsetLeft,
+                otherSlideScrollLeft: controlled.swiper.slides[4].offsetLeft
+            }});
+            stage.remove();
+            return result;");
+
+        // Assert - left running, the move writes its own offset every frame and ends on the last slide
+        Assert.NotEqual(result.OtherSlideScrollLeft, result.ExpectedScrollLeft);
+        Assert.Equal(result.ExpectedIndex, result.RealIndex);
+        Assert.Equal(result.ExpectedScrollLeft, result.ScrollLeft);
+        Assert.Equal(string.Empty, result.InlineSnapType);
         fixture.AssertNoJsErrors();
     }
 

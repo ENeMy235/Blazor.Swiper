@@ -12,6 +12,7 @@ import {
     shouldReanchor,
     scrollPlan,
     scrollPositionAt,
+    isSwiperCorrection,
     isInitPhaseEvent,
     isHighFrequencyEvent,
     shouldSendThrottledEvent,
@@ -226,6 +227,25 @@ test("ScrollPositionAt_PastTheDuration_LandsExactlyOnTargetWithoutOvershooting",
 test("ScrollPositionAt_Midway_IsAlreadyMostOfTheWayBecauseTheEaseIsFrontLoaded", () => {
     // easeOutCubic(0.5) = 1 - 0.5^3 = 0.875
     assert.equal(scrollPositionAt(0, 100, 150, 300), 87.5);
+});
+
+test("IsSwiperCorrection_InstantAndInternal_IsSwiperReseatingItself", () => {
+    // The call Swiper makes after a resize or an update: slideTo(activeIndex, 0, false, true).
+    assert.equal(isSwiperCorrection(0, true), true);
+});
+
+test("IsSwiperCorrection_InternalFlagLeftUnset_IsNavigation", () => {
+    // Arrows, bullets and keys never set the flag - not even for an instant move.
+    assert.equal(isSwiperCorrection(0, undefined), false);
+    assert.equal(isSwiperCorrection(0, false), false);
+    assert.equal(isSwiperCorrection(300, undefined), false);
+    assert.equal(isSwiperCorrection(undefined, undefined), false);
+});
+
+test("IsSwiperCorrection_InternalButAnimated_IsNavigation", () => {
+    // Autoplay flags its moves internal too, and those do send the slider somewhere.
+    assert.equal(isSwiperCorrection(300, true), false);
+    assert.equal(isSwiperCorrection(undefined, true), false);
 });
 
 test("ChangedOptions_MemberThatMoved_IsTheOnlyOneReported", () => {
