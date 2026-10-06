@@ -549,12 +549,16 @@ function scrollToSlide(element, swiper, index, speed) {
     const plan = scrollPlan(start, slideOffset(swiper, index), speed, swiper.params.speed);
     state.endScrollMove?.();
 
+    // cssMode raises no transitionend, so nothing else ever disarms the intent slideTo() just set. A move
+    // with nothing to animate is over already.
     if (plan.kind === "none") {
+        state.intendedIndex = null;
         return;
     }
 
     if (plan.kind === "instant") {
         wrapper.scrollLeft = plan.target;
+        state.intendedIndex = null;
         return;
     }
 
@@ -565,6 +569,8 @@ function scrollToSlide(element, swiper, index, speed) {
     let isClockArmed = false;
     let startTime = null;
 
+    // Deliberately leaves the intent alone: this also runs when a newer slideTo replaces the move, and by
+    // then the intent is that request's - which may well name the same slide.
     const end = () => {
         cancelAnimationFrame(frameRequest);
         delete swiper.slideTo;
@@ -622,6 +628,7 @@ function scrollToSlide(element, swiper, index, speed) {
             return;
         }
 
+        state.intendedIndex = null;
         end();
     };
 

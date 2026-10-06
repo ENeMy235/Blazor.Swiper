@@ -253,6 +253,31 @@ public sealed class SwiperCssModeMoveTests(DemoFixture fixture)
     }
 
     [Theory]
+    [InlineData(2, 300)]
+    [InlineData(1, 0)]
+    [InlineData(0, 300)]
+    public async Task Resize_AfterAMoveThatFinished_StaysOnTheSlideTheSliderIsOn(int index, int speed)
+    {
+        // Arrange - an animated move, an instant one, and one the slider was already on
+        await fixture.NavigateToStoryAsync(CssModeStory, CssModeState);
+
+        // Act - the slider has since been moved on by something else
+        var result = await EvaluateAsync($@"
+            interop.slideTo(host, {index}, {speed});
+            await settle();
+            interop.slideNext(host, 0);
+            await settle();
+            host.style.width = '70%';
+            await settle();
+            return read({{ expectedIndex: {index} + 1, expectedScrollLeft: offsetOf({index} + 1) }});");
+
+        // Assert - cssMode raises no transition end, so nothing else ever stands the finished move down
+        Assert.Equal(result.ExpectedIndex, result.RealIndex);
+        Assert.Equal(result.ExpectedScrollLeft, result.ScrollLeft);
+        fixture.AssertNoJsErrors();
+    }
+
+    [Theory]
     [InlineData("wrapper.dispatchEvent(new WheelEvent('wheel', { deltaX: 40, bubbles: true, cancelable: true }));")]
     [InlineData("wrapper.dispatchEvent(new WheelEvent('wheel', { deltaY: 40, bubbles: true, cancelable: true }));")]
     [InlineData("host.swiper.emit('sliderFirstMove');")]
