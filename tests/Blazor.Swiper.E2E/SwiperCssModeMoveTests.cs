@@ -21,6 +21,12 @@ public sealed class SwiperCssModeMoveTests(DemoFixture fixture)
     private const string CssModeStory = "components-swiper--css-mode";
     private const string CssModeState = "css-mode-state";
 
+    /// <summary>
+    /// How far the scroll offset may differ between two reads of a slider that should not have moved.
+    /// Each read is rounded, so one pixel either way is the rounding and not a jump.
+    /// </summary>
+    private const int HandoverTolerancePixels = 2;
+
     private static readonly JsonSerializerOptions _jsonOptions = new() { PropertyNameCaseInsensitive = true };
 
     // Shared page-side setup: the interop module, the story's slider, and waits counted in time and
@@ -164,6 +170,47 @@ public sealed class SwiperCssModeMoveTests(DemoFixture fixture)
         fixture.AssertNoJsErrors();
     }
 
+    [Fact]
+    public async Task SlideTo_ReplacingAMoveInFlight_StartsFromWhereTheSliderIs()
+    {
+        // Arrange
+        await fixture.NavigateToStoryAsync(CssModeStory, CssModeState);
+
+        // Act - the first move is caught between two slides, which is where scroll-snap would pull
+        // the slider onto the nearer one the moment it is handed back
+        var result = await EvaluateAsync(@"
+            interop.slideTo(host, 2, 1000);
+            await wait(450);
+            const scrollLeftBeforeHandover = Math.round(wrapper.scrollLeft);
+            interop.slideTo(host, 0, 1000);
+            const scrollLeftAfterHandover = Math.round(wrapper.scrollLeft);
+            await frame();
+            const scrollLeftOnNextFrame = Math.round(wrapper.scrollLeft);
+            await wait(1400);
+            return read({
+                scrollLeftBeforeHandover,
+                scrollLeftAfterHandover,
+                scrollLeftOnNextFrame,
+                expectedScrollLeft: offsetOf(0),
+                otherSlideScrollLeft: offsetOf(2)
+            });");
+
+        // Assert - caught mid-way, so staying put is not the same as resting on a slide
+        Assert.InRange(result.ScrollLeftBeforeHandover ?? -1, 1, result.OtherSlideScrollLeft - 1);
+        AssertWithinPixels(result.ScrollLeftBeforeHandover, result.ScrollLeftAfterHandover);
+        AssertWithinPixels(result.ScrollLeftBeforeHandover, result.ScrollLeftOnNextFrame);
+        Assert.Equal(result.ExpectedScrollLeft, result.ScrollLeft);
+        Assert.Equal(string.Empty, result.InlineSnapType);
+        fixture.AssertNoJsErrors();
+    }
+
+    private static void AssertWithinPixels(int? expected, int? actual)
+    {
+        Assert.NotNull(expected);
+        Assert.NotNull(actual);
+        Assert.InRange(actual.Value, expected.Value - HandoverTolerancePixels, expected.Value + HandoverTolerancePixels);
+    }
+
     private async Task<CssModeMoveResult> EvaluateAsync(string scenario)
     {
         var json = await fixture.Page.EvaluateAsync<string>($"async () => {{ {Harness} {scenario} }}");
@@ -179,5 +226,8 @@ public sealed class SwiperCssModeMoveTests(DemoFixture fixture)
         int OtherSlideScrollLeft,
         int ScrollLeftAfterTwoFrames,
         string? SnapTypeAtRest,
-        string? SnapTypeMidMove);
+        string? SnapTypeMidMove,
+        int? ScrollLeftBeforeHandover,
+        int? ScrollLeftAfterHandover,
+        int? ScrollLeftOnNextFrame);
 }

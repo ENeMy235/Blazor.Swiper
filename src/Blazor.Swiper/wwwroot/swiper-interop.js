@@ -527,19 +527,22 @@ export function slideTo(element, index, speed) {
 // to a snap point, and any re-render during the scroll cancels it outright, leaving the slider where it
 // started. Writing scrollLeft per frame is not cancellable, so the animation always completes.
 //
-// There is one move per slider, and a new request ends the one in flight before anything else. Left
-// running, the older move keeps writing its own target every frame and can be the one that lands last - a
-// request that finds the slider already on its slide starts no animation at all, so nothing would even
-// compete with it. Each move also hands scroll-snap back to the value it found, which for a move started
-// during another is that one's "none": snapping would then stay off for good, and the slider would rest
-// wherever a swipe is released, between two slides.
+// There is one move per slider, and a new request ends the one in flight. Left running, the older move
+// keeps writing its own target every frame and can be the one that lands last - a request that finds the
+// slider already on its slide starts no animation at all, so nothing would even compete with it. Each
+// move also hands scroll-snap back to the value it found, which for a move started during another is that
+// one's "none": snapping would then stay off for good, and the slider would rest wherever a swipe is
+// released, between two slides.
 function scrollToSlide(element, swiper, index, speed) {
     const state = hostState(element);
-    state.endScrollMove?.();
-
     const wrapper = swiper.wrapperEl;
+
+    // Both offsets are read before the move in flight is ended. Ending it hands scroll-snap back, and a
+    // layout read after that re-snaps the wrapper on the spot - so this move would start from the nearest
+    // slide rather than from where the slider is, a jump that can point away from the new target.
     const start = wrapper.scrollLeft;
     const plan = scrollPlan(start, swiper.slides[index]?.offsetLeft ?? 0, speed, swiper.params.speed);
+    state.endScrollMove?.();
 
     if (plan.kind === "none") {
         return;
