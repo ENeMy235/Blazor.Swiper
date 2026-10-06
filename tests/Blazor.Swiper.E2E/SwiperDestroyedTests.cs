@@ -76,6 +76,12 @@ public sealed class SwiperDestroyedTests(DemoFixture fixture)
             await new Promise(resolve => setTimeout(resolve, 150));
         };
 
+        // Outlasts a 300ms cssMode move, which `settle` does not.
+        const settleMove = async () => {
+            await settle();
+            await new Promise(resolve => setTimeout(resolve, 500));
+        };
+
         const finish = (result) => {
             window.removeEventListener('error', onError);
             window.removeEventListener('unhandledrejection', onRejection);
@@ -353,6 +359,123 @@ public sealed class SwiperDestroyedTests(DemoFixture fixture)
         fixture.AssertNoJsErrors();
     }
 
+    [Fact]
+    public async Task CssModeMove_ContainerRemovedFromDom_StopsAndRestoresScrollSnap()
+    {
+        // Arrange
+        await fixture.NavigateToStoryAsync(AnyStory);
+
+        // Act - the move is requested and the container is gone before its first frame
+        var result = await EvaluateAsync(@"
+            const host = createHost();
+            await interop.initialize(host, { cssMode: true }, null, [], 0, false);
+            const instance = host.swiper;
+            const wrapper = instance.wrapperEl;
+
+            interop.slideTo(host, 2, 300);
+            const snapTypeMidMove = wrapper.style.scrollSnapType;
+            host.remove();
+
+            await settleMove();
+            return finish({
+                isHostStillPointingAtIt: host.swiper === instance,
+                isDestroyed: instance.destroyed === true,
+                hasParams: instance.params !== undefined,
+                snapTypeMidMove,
+                inlineSnapType: wrapper.style.scrollSnapType
+            });");
+
+        // Assert
+        Assert.True(result.IsDestroyed, "Removing the container did not destroy its Swiper.");
+        Assert.Equal("none", result.SnapTypeMidMove);
+        Assert.Equal(string.Empty, result.InlineSnapType);
+        Assert.Empty(result.Errors);
+        fixture.AssertNoJsErrors();
+    }
+
+    [Fact]
+    public async Task CssModeMove_InstanceReplaced_LeavesTheReplacementWhereItStarted()
+    {
+        // Arrange
+        await fixture.NavigateToStoryAsync(AnyStory);
+
+        // Act - the replacement is built on the same host, so a move still running for its
+        // predecessor would be scrolling the slider now on screen
+        var result = await EvaluateAsync(@"
+            const host = createHost();
+            await interop.initialize(host, { cssMode: true }, null, [], 0, false);
+            const instance = host.swiper;
+            const wrapper = instance.wrapperEl;
+
+            interop.slideTo(host, 2, 300);
+            const snapTypeMidMove = wrapper.style.scrollSnapType;
+            replaceInstance(host);
+
+            await settleMove();
+            const result = {
+                isHostStillPointingAtIt: host.swiper === instance,
+                isDestroyed: instance.destroyed === true,
+                hasParams: instance.params !== undefined,
+                snapTypeMidMove,
+                inlineSnapType: wrapper.style.scrollSnapType,
+                scrollLeft: Math.round(host.swiper.wrapperEl.scrollLeft),
+                anchoredIndex: host.swiper.activeIndex
+            };
+            host.remove();
+            return finish(result);");
+
+        // Assert
+        Assert.True(result.IsDestroyed, "Replacing the instance did not destroy the first one.");
+        Assert.False(result.IsHostStillPointingAtIt, "The host still references the first instance.");
+        Assert.Equal("none", result.SnapTypeMidMove);
+        Assert.Equal(string.Empty, result.InlineSnapType);
+        Assert.Equal(0, result.ScrollLeft);
+        Assert.Equal(0, result.AnchoredIndex);
+        Assert.Empty(result.Errors);
+        fixture.AssertNoJsErrors();
+    }
+
+    [Fact]
+    public async Task CssModeMove_SliderDestroyed_StopsAndRestoresScrollSnap()
+    {
+        // Arrange
+        await fixture.NavigateToStoryAsync(AnyStory);
+
+        // Act - the wrapper's own teardown, with the container still in the document
+        var result = await EvaluateAsync(@"
+            const host = createHost();
+            await interop.initialize(host, { cssMode: true }, null, [], 0, false);
+            const instance = host.swiper;
+            const wrapper = instance.wrapperEl;
+
+            interop.slideTo(host, 2, 300);
+            await new Promise(resolve => setTimeout(resolve, 120));
+            const snapTypeMidMove = wrapper.style.scrollSnapType;
+            interop.destroy(host);
+            const scrollLeftAtDestroy = Math.round(wrapper.scrollLeft);
+
+            await settleMove();
+            const result = {
+                isHostStillPointingAtIt: host.swiper === instance,
+                isDestroyed: instance.destroyed === true,
+                hasParams: instance.params !== undefined,
+                snapTypeMidMove,
+                inlineSnapType: wrapper.style.scrollSnapType,
+                scrollLeftAtDestroy,
+                scrollLeft: Math.round(wrapper.scrollLeft)
+            };
+            host.remove();
+            return finish(result);");
+
+        // Assert
+        Assert.True(result.IsDestroyed, "Destroying the slider did not destroy its Swiper.");
+        Assert.Equal("none", result.SnapTypeMidMove);
+        Assert.Equal(string.Empty, result.InlineSnapType);
+        Assert.Equal(result.ScrollLeftAtDestroy, result.ScrollLeft);
+        Assert.Empty(result.Errors);
+        fixture.AssertNoJsErrors();
+    }
+
     private async Task<DestroyedResult> EvaluateAsync(string scenario)
     {
         var json = await fixture.Page.EvaluateAsync<string>($"async () => {{ {Harness} {scenario} }}");
@@ -368,5 +491,9 @@ public sealed class SwiperDestroyedTests(DemoFixture fixture)
         int? AnchoredIndex,
         int[]? ReportedSlideCounts,
         string[]? DestroyedKeys,
-        int?[]? ForwardedSlideIndexes);
+        int?[]? ForwardedSlideIndexes,
+        string? SnapTypeMidMove,
+        string? InlineSnapType,
+        int? ScrollLeft,
+        int? ScrollLeftAtDestroy);
 }
