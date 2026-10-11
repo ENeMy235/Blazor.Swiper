@@ -280,11 +280,9 @@ public sealed class SwiperCssModeMoveTests(DemoFixture fixture)
     [Theory]
     [InlineData("wrapper.dispatchEvent(new WheelEvent('wheel', { deltaX: 40, bubbles: true, cancelable: true }));")]
     [InlineData("wrapper.dispatchEvent(new WheelEvent('wheel', { deltaY: 40, bubbles: true, cancelable: true }));")]
-    [InlineData("host.swiper.emit('sliderFirstMove');")]
     public async Task UserScroll_DuringAMove_HandsTheSliderBackToTheUser(string userScroll)
     {
-        // Arrange - the wheel on either axis, which Swiper turns into a step of its own in cssMode,
-        // and the first movement of a drag as Swiper announces it
+        // Arrange - the wheel on either axis, which Swiper turns into a step of its own in cssMode
         await fixture.NavigateToStoryAsync(CssModeStory, CssModeState);
 
         // Act
@@ -303,6 +301,98 @@ public sealed class SwiperCssModeMoveTests(DemoFixture fixture)
         Assert.Contains(result.ScrollLeft, result.SlideOffsets ?? []);
         Assert.NotEqual(result.OtherSlideScrollLeft, result.ScrollLeft);
         Assert.Equal(string.Empty, result.InlineSnapType);
+        fixture.AssertNoJsErrors();
+    }
+
+    [Fact]
+    public async Task Drag_DuringAMove_HandsTheSliderBackToTheUser()
+    {
+        // Arrange
+        var canvas = await fixture.NavigateToStoryAsync(CssModeStory, CssModeState);
+        var slider = canvas.GetByTestId("css-mode-swiper");
+
+        // Act - a real pointer drag, so it is Swiper that raises sliderFirstMove and not the scenario.
+        // The drag is over well before the move would have finished by itself.
+        var beforeDrag = await EvaluateAsync(@"
+            interop.slideTo(host, 4, 1500);
+            await wait(250);
+            return read();");
+        await SwipeHelper.SwipeLeftAsync(fixture.Page, slider);
+        var afterDrag = await EvaluateAsync("return read();");
+        var result = await EvaluateAsync(@"
+            await wait(2000);
+            return read({
+                slideOffsets: Array.from(host.swiper.slides, slide => slide.offsetLeft),
+                otherSlideScrollLeft: offsetOf(4)
+            });");
+
+        // Assert - snapping is back at once rather than when the move would have finished, and
+        // the slider rests on a slide that is not the one the move was heading for
+        Assert.Equal("none", beforeDrag.InlineSnapType);
+        Assert.Equal(string.Empty, afterDrag.InlineSnapType);
+        Assert.Contains(result.ScrollLeft, result.SlideOffsets ?? []);
+        Assert.NotEqual(result.OtherSlideScrollLeft, result.ScrollLeft);
+        Assert.Equal(string.Empty, result.InlineSnapType);
+        fixture.AssertNoJsErrors();
+    }
+
+    [Fact]
+    public async Task Resize_DuringAMove_NeverShowsTheTargetEarly()
+    {
+        // Arrange
+        await fixture.NavigateToStoryAsync(CssModeStory, CssModeState);
+
+        // Act - every frame for a while after the resize, read both as the frame starts and once it
+        // has been painted. The move is slow enough to be well short of its slide throughout.
+        var result = await EvaluateAsync(@"
+            interop.slideTo(host, 2, 2000);
+            await wait(300);
+            host.style.width = '70%';
+            let highestScrollLeft = 0;
+            const sampledUntil = performance.now() + 300;
+            while (performance.now() < sampledUntil) {
+                await frame();
+                highestScrollLeft = Math.max(highestScrollLeft, wrapper.scrollLeft);
+                await wait(0);
+                highestScrollLeft = Math.max(highestScrollLeft, wrapper.scrollLeft);
+            }
+            await wait(2400);
+            return read({ highestScrollLeftAfterResize: Math.round(highestScrollLeft), expectedScrollLeft: offsetOf(2) });");
+
+        // Assert - the resize guard anchoring onto the intended slide would put the slider on it for
+        // a frame, before the move writes its own offset again
+        Assert.NotNull(result.HighestScrollLeftAfterResize);
+        Assert.True(
+            result.HighestScrollLeftAfterResize < result.ExpectedScrollLeft * 0.9,
+            $"The slider reached {result.HighestScrollLeftAfterResize}px of {result.ExpectedScrollLeft}px right after the resize.");
+        Assert.Equal(result.ExpectedScrollLeft, result.ScrollLeft);
+        Assert.Equal(2, result.RealIndex);
+        fixture.AssertNoJsErrors();
+    }
+
+    [Fact]
+    public async Task ArmAnchor_SlidesChangedDuringAMove_EndsOnTheAnchoredSlide()
+    {
+        // Arrange
+        await fixture.NavigateToStoryAsync(CssModeStory, CssModeState);
+
+        // Act - the appended slide is the mutation the anchor waits for
+        var result = await EvaluateAsync(@"
+            interop.slideTo(host, 3, 1000);
+            await wait(200);
+            interop.armAnchor(host, 1);
+            host.appendChild(document.createElement('swiper-slide'));
+            await frame();
+            const snapTypeMidMove = wrapper.style.scrollSnapType;
+            await wait(1400);
+            return read({ snapTypeMidMove, expectedScrollLeft: offsetOf(1), otherSlideScrollLeft: offsetOf(3) });");
+
+        // Assert - the anchor's own slideTo is instant and internal, exactly what a move in flight
+        // lets through as Swiper re-seating itself, so the move has to be ended for it
+        Assert.Equal(string.Empty, result.SnapTypeMidMove);
+        Assert.NotEqual(result.OtherSlideScrollLeft, result.ExpectedScrollLeft);
+        Assert.Equal(result.ExpectedScrollLeft, result.ScrollLeft);
+        Assert.Equal(1, result.RealIndex);
         fixture.AssertNoJsErrors();
     }
 
@@ -426,5 +516,6 @@ public sealed class SwiperCssModeMoveTests(DemoFixture fixture)
         int? ScrollLeftAfterHandover,
         int? ScrollLeftOnNextFrame,
         int? ExpectedIndex,
-        int[]? SlideOffsets);
+        int[]? SlideOffsets,
+        int? HighestScrollLeftAfterResize);
 }
