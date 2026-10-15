@@ -278,6 +278,57 @@ public sealed class SwiperCssModeMoveTests(DemoFixture fixture)
     }
 
     [Theory]
+    [InlineData("200px")]
+    [InlineData("900px")]
+    public async Task SlideTo_InstantMoveWhileTheSliderResizes_EndsOnTheRequestedSlide(string resizedWidth)
+    {
+        // Arrange - slides sized by CSS rather than by Swiper. Swiper pins the width of every slide it
+        // sizes itself, so those keep their old offsets until its own resize handling runs; these move
+        // with the container at once, while Swiper still holds the slide grid from before the resize.
+        await fixture.NavigateToStoryAsync(CssModeStory, CssModeState);
+
+        // Act - the host resizes the slider and asks for an instant move in the same task
+        var result = await EvaluateAsync($@"
+            const stage = document.createElement('div');
+            stage.style.width = '420px';
+            document.body.appendChild(stage);
+
+            const sized = document.createElement('swiper-container');
+            sized.setAttribute('init', 'false');
+            for (let i = 0; i < 10; i++) {{
+                const slide = document.createElement('swiper-slide');
+                slide.textContent = `Slide ${{i}}`;
+                slide.style.width = '80%';
+                slide.style.height = '120px';
+                sized.appendChild(slide);
+            }}
+            stage.appendChild(sized);
+
+            await interop.initialize(sized, {{ cssMode: true, slidesPerView: 'auto', spaceBetween: 16 }}, null, [], 0, false);
+            await settle();
+            const track = sized.swiper.wrapperEl;
+
+            stage.style.width = '{resizedWidth}';
+            interop.slideTo(sized, 5, 0);
+            await settle();
+
+            const result = JSON.stringify({{
+                scrollLeft: Math.round(track.scrollLeft),
+                realIndex: sized.swiper.realIndex,
+                expectedIndex: 5,
+                expectedScrollLeft: sized.swiper.slides[5].offsetLeft
+            }});
+            stage.remove();
+            return result;");
+
+        // Assert - Swiper reads its index off the old grid on the first scroll and re-seats onto it
+        // after the resize, so only an intent still armed by then brings the slider back
+        Assert.Equal(result.ExpectedIndex, result.RealIndex);
+        Assert.Equal(result.ExpectedScrollLeft, result.ScrollLeft);
+        fixture.AssertNoJsErrors();
+    }
+
+    [Theory]
     [InlineData("wrapper.dispatchEvent(new WheelEvent('wheel', { deltaX: 40, bubbles: true, cancelable: true }));")]
     [InlineData("wrapper.dispatchEvent(new WheelEvent('wheel', { deltaY: 40, bubbles: true, cancelable: true }));")]
     public async Task UserScroll_DuringAMove_HandsTheSliderBackToTheUser(string userScroll)
