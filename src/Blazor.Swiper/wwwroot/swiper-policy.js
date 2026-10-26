@@ -288,17 +288,46 @@ export function isSwiperCorrection(speed, runCallbacks, isInternal) {
 }
 
 /**
+ * Whether a navigation call Swiper answered sent the slider somewhere, rather than being turned down.
+ *
+ * Swiper's `slideTo` returns false for both. It turns a call down when it is disabled, locked in that
+ * direction, or mid-transition with `preventInteractionOnTransition` - and it also returns false when
+ * the slider already rests where the call asks it to be. The second is still navigation: a reset, or
+ * the bullet of a slide the slider has not left yet, says "stay here", and a move in flight must not
+ * carry the slider off regardless. Only a lock can turn a call down, so without one a false is the
+ * second.
+ */
+export function isSwiperTakingOver(hasMoved, isNavigationLocked) {
+    return hasMoved || !isNavigationLocked;
+}
+
+/**
+ * The inline `scroll-snap-type` to hand back when a cssMode move ends, given the one it found.
+ *
+ * Swiper writes "none" there itself, for a frame around every instant move of a virtual slider and for
+ * the length of a scrollbar drag, so a "none" found is never the slider's resting state and handing it
+ * back would leave snapping off for good. Anything else - the stylesheet's empty value, or a snap type
+ * the host set on the wrapper - is.
+ */
+export function snapTypeToHandBack(found) {
+    return found === "none" ? "" : found;
+}
+
+/**
  * Whether a resize of the container can leave Swiper on another slide than the one it was on
  * (https://github.com/nolimits4web/swiper/issues/8246).
  *
  * In cssMode the scroll position is the slider's state. Slides sized by CSS take their new size
  * before Swiper's resize handling runs, the browser re-snaps the scroller onto the same slide at
  * its new offset, and Swiper reads that re-snap against the slide grid from before the resize.
- * Slides Swiper sizes itself have not moved by then, and free mode does not snap.
+ * Slides Swiper sizes itself have not moved by then, and free mode does not snap. With
+ * `updateOnWindowResize` off Swiper does not re-seat on a resize at all, and the host measures the
+ * slider itself when it chooses to.
  */
 export function isResizeDriftProne(params) {
     const isFreeMode = params.freeMode === true || params.freeMode?.enabled === true;
-    return params.cssMode === true && params.slidesPerView === "auto" && !isFreeMode;
+    const isResizeHandled = params.updateOnWindowResize !== false;
+    return params.cssMode === true && params.slidesPerView === "auto" && !isFreeMode && isResizeHandled;
 }
 
 // --- events -------------------------------------------------------------------------------------

@@ -21,6 +21,8 @@ import {
     scrollPlan,
     scrollPositionAt,
     isSwiperCorrection,
+    isSwiperTakingOver,
+    snapTypeToHandBack,
     isResizeDriftProne,
     isInitPhaseEvent,
     isInitOnlyParam,
@@ -529,17 +531,17 @@ export function slideTo(element, index, speed) {
 // cssMode moves the slider by scrolling the wrapper, and Swiper drives that with a native smooth scroll.
 // That is unusable under scroll-snap: `scroll-snap-type: mandatory` yanks every intermediate position back
 // to a snap point, and any re-render during the scroll cancels it outright, leaving the slider where it
-// started. Writing scrollLeft per frame is not cancellable, so the animation always completes.
+// started. Writing scrollLeft per frame is cancellable by neither, so the animation completes - unless
+// something else takes the slider over, which the move then steps aside for (below).
 //
 // There is one move per slider, and a new request ends the one in flight. Left running, the older move
 // keeps writing its own target every frame and can be the one that lands last - a request that finds the
 // slider already on its slide starts no animation at all, so nothing would even compete with it.
 //
-// Ending a move hands scroll-snap back to Swiper's stylesheet - an empty inline value - and never to the
-// inline value the move found. That can be a "none" that was never the slider's resting state: another
-// move's, or Swiper's own, which it writes for a frame around every instant move of a virtual slider and
-// for the length of a scrollbar drag. Handed back, it would leave snapping off for good, and the slider
-// would rest wherever a swipe is released, between two slides.
+// Ending a move hands back the inline scroll-snap type the move found - unless that was a "none", which is
+// never the slider's resting state but another move's, or Swiper's own: it writes one for a frame around
+// every instant move of a virtual slider and for the length of a scrollbar drag. Handed back, it would leave
+// snapping off for good, and the slider would rest wherever a swipe is released, between two slides.
 //
 // Writing the offset every frame also overwrites whatever else moves the slider meanwhile, so the move
 // steps aside for all of it (abandonScrollMove): Swiper navigating by any route, an anchor and a drag.
@@ -567,6 +569,7 @@ function scrollToSlide(element, swiper, index, speed) {
         return;
     }
 
+    const restingSnapType = snapTypeToHandBack(wrapper.style.scrollSnapType);
     wrapper.style.scrollSnapType = "none";
 
     let frameRequest = 0;
@@ -581,7 +584,7 @@ function scrollToSlide(element, swiper, index, speed) {
         if (state.endScrollMove === end) {
             state.endScrollMove = null;
         }
-        wrapper.style.scrollSnapType = "";
+        wrapper.style.scrollSnapType = restingSnapType;
     };
 
     // Swiper's arrows, pagination and keyboard never pass through this module, and none of them announces
@@ -595,11 +598,13 @@ function scrollToSlide(element, swiper, index, speed) {
     //
     // Swiper moves first and the move is abandoned after, so Swiper reads the slider's position while
     // scroll-snap is still suspended - the other way round, the restored snapping pulls the slider onto the
-    // nearest slide before Swiper has looked at it. A call Swiper turns down leaves the move running.
+    // nearest slide before Swiper has looked at it. A call Swiper turns down leaves the move running, while one
+    // that finds the slider already where it asks is still navigation (isSwiperTakingOver).
     const swiperSlideTo = swiper.slideTo;
     swiper.slideTo = function (slideIndex, slideSpeed, runCallbacks, isInternal, ...rest) {
         const hasMoved = swiperSlideTo.call(this, slideIndex, slideSpeed, runCallbacks, isInternal, ...rest);
-        if (hasMoved && !isSwiperCorrection(slideSpeed, runCallbacks, isInternal)) {
+        const isCorrection = isSwiperCorrection(slideSpeed, runCallbacks, isInternal);
+        if (!isCorrection && isSwiperTakingOver(hasMoved, isNavigationLocked(this))) {
             abandonScrollMove(element);
         }
         return hasMoved;
@@ -638,6 +643,12 @@ function scrollToSlide(element, swiper, index, speed) {
 
     state.endScrollMove = end;
     frameRequest = requestAnimationFrame(step);
+}
+
+// Everything that can make Swiper's slideTo turn a call down - the early returns before it moves anything.
+function isNavigationLocked(swiper) {
+    const isTransitionLocked = swiper.animating && swiper.params.preventInteractionOnTransition;
+    return !swiper.enabled || !swiper.allowSlideNext || !swiper.allowSlidePrev || isTransitionLocked;
 }
 
 function slideOffset(swiper, index) {

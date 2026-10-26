@@ -276,6 +276,51 @@ public sealed class SwiperCssModeMoveTests(DemoFixture fixture)
     }
 
     [Fact]
+    public async Task SlideReset_RightAfterAMoveWasRequested_KeepsTheSliderWhereItIs()
+    {
+        // Arrange
+        await fixture.NavigateToStoryAsync(CssModeStory, CssModeState);
+
+        // Act - the reset finds the slider still on the slide it holds, so Swiper has nothing to move and
+        // answers false, just as it does for a call it turns down
+        var result = await EvaluateAsync(@"
+            interop.slideTo(host, 2, 400);
+            interop.slideReset(host, 0);
+            await settle();
+            return read({ expectedIndex: 0, expectedScrollLeft: offsetOf(0), otherSlideScrollLeft: offsetOf(2) });");
+
+        // Assert - left running, the move carries the slider on to the third slide
+        Assert.Equal(result.ExpectedIndex, result.RealIndex);
+        Assert.Equal(result.ExpectedScrollLeft, result.ScrollLeft);
+        Assert.Equal(string.Empty, result.InlineSnapType);
+        fixture.AssertNoJsErrors();
+    }
+
+    [Fact]
+    public async Task SlidePrev_TurnedDownDuringAMove_LeavesTheMoveRunning()
+    {
+        // Arrange - stepping back is locked, so Swiper turns a step back down
+        await fixture.NavigateToStoryAsync(CssModeStory, CssModeState);
+
+        // Act
+        var result = await EvaluateAsync(@"
+            interop.slideTo(host, 1, 0);
+            await settle();
+            host.swiper.allowSlidePrev = false;
+            interop.slideTo(host, 3, 1000);
+            await wait(150);
+            interop.slidePrev(host, 0);
+            await wait(1600);
+            return read({ expectedIndex: 3, expectedScrollLeft: offsetOf(3) });");
+
+        // Assert - the slider was sent nowhere, so the move still lands on its own slide
+        Assert.Equal(result.ExpectedIndex, result.RealIndex);
+        Assert.Equal(result.ExpectedScrollLeft, result.ScrollLeft);
+        Assert.Equal(string.Empty, result.InlineSnapType);
+        fixture.AssertNoJsErrors();
+    }
+
+    [Fact]
     public async Task Resize_DuringAMove_EndsOnTheRequestedSlide()
     {
         // Arrange
@@ -399,6 +444,29 @@ public sealed class SwiperCssModeMoveTests(DemoFixture fixture)
     }
 
     [Fact]
+    public async Task Resize_WithWindowResizeUpdatesOff_LeavesTheSliderUnmeasured()
+    {
+        // Arrange - a host that turned Swiper's own resize handling off measures the slider itself, when it
+        // chooses to
+        await fixture.NavigateToStoryAsync(CssModeStory, CssModeState);
+
+        // Act
+        var result = await EvaluateAsync(StandaloneSlider + @"
+            const slider = await cssSizedSlider({ initialSlide: 5, updateOnWindowResize: false });
+            const sizeBeforeResize = Math.round(slider.el.swiper.size);
+            slider.stage.style.width = '900px';
+            await settle();
+            const result = JSON.stringify({ sizeBeforeResize, sizeAfterResize: Math.round(slider.el.swiper.size) });
+            slider.stage.remove();
+            return result;");
+
+        // Assert - the drift correction runs ahead of Swiper's resize handling and must not stand in for it
+        Assert.Equal(420, result.SizeBeforeResize);
+        Assert.Equal(result.SizeBeforeResize, result.SizeAfterResize);
+        fixture.AssertNoJsErrors();
+    }
+
+    [Fact]
     public async Task SlideTo_StartedWhileSwiperHoldsScrollSnapOff_HandsScrollSnapBack()
     {
         // Arrange - a virtual slider. Swiper switches scroll-snap off itself for one frame around every instant
@@ -437,10 +505,32 @@ public sealed class SwiperCssModeMoveTests(DemoFixture fixture)
     }
 
     [Fact]
+    public async Task SlideTo_OnAWrapperWithItsOwnInlineSnapType_HandsThatSnapTypeBack()
+    {
+        // Arrange - a host that set the wrapper's snapping inline itself, which is not a 'none' of Swiper's
+        await fixture.NavigateToStoryAsync(CssModeStory, CssModeState);
+
+        // Act
+        var result = await EvaluateAsync(@"
+            wrapper.style.scrollSnapType = 'x proximity';
+            const snapTypeAtRest = wrapper.style.scrollSnapType;
+            const computedSnapTypeAtRest = getComputedStyle(wrapper).scrollSnapType;
+            interop.slideTo(host, 2, 300);
+            await settle();
+            return read({ snapTypeAtRest, computedSnapTypeAtRest });");
+
+        // Assert
+        Assert.NotEqual(string.Empty, result.SnapTypeAtRest);
+        Assert.Equal(result.SnapTypeAtRest, result.InlineSnapType);
+        Assert.Equal(result.ComputedSnapTypeAtRest, result.ComputedSnapType);
+        fixture.AssertNoJsErrors();
+    }
+
+    [Fact]
     public async Task Autoplay_StepAtSpeedZeroDuringAMove_MovesTheSlider()
     {
-        // Arrange - at speed 0 every autoplay step is an instant move flagged internal, the same shape as
-        // Swiper re-seating itself after a resize
+        // Arrange - at speed 0 every autoplay step is instant and flagged internal, just like Swiper re-seating
+        // itself after a resize; only its callbacks set it apart
         await fixture.NavigateToStoryAsync(CssModeStory, CssModeState);
 
         // Act - the first autoplay step lands part-way through a long move, and autoplay stops after it so the
@@ -448,26 +538,31 @@ public sealed class SwiperCssModeMoveTests(DemoFixture fixture)
         var result = await EvaluateAsync(StandaloneSlider + @"
             const slider = await standaloneSlider({ speed: 0, autoplay: { delay: 800 } });
             let scrollLeftAtAutoplay = null;
+            let millisecondsIntoMove = null;
             slider.el.addEventListener('swiperautoplay', () => {
                 if (scrollLeftAtAutoplay !== null) {
                     return;
                 }
                 scrollLeftAtAutoplay = Math.round(slider.track.scrollLeft);
+                millisecondsIntoMove = Math.round(performance.now() - requestedAt);
                 slider.el.swiper.autoplay.stop();
             });
+            const requestedAt = performance.now();
             interop.slideTo(slider.el, 6, 2500);
             await wait(3200);
             const result = JSON.stringify({
                 scrollLeft: Math.round(slider.track.scrollLeft),
                 expectedScrollLeft: scrollLeftAtAutoplay ?? -1,
                 otherSlideScrollLeft: slider.el.swiper.slides[6].offsetLeft,
-                inlineSnapType: slider.track.style.scrollSnapType
+                inlineSnapType: slider.track.style.scrollSnapType,
+                millisecondsIntoMove
             });
             slider.stage.remove();
             return result;");
 
         // Assert - left running, the move writes its own offset over the step every frame and ends on its slide
         Assert.NotEqual(-1, result.ExpectedScrollLeft);
+        Assert.InRange(result.MillisecondsIntoMove ?? -1, 0, 2000);
         Assert.NotEqual(result.OtherSlideScrollLeft, result.ExpectedScrollLeft);
         AssertWithinPixels(result.ExpectedScrollLeft, result.ScrollLeft);
         Assert.Equal(string.Empty, result.InlineSnapType);
@@ -718,5 +813,9 @@ public sealed class SwiperCssModeMoveTests(DemoFixture fixture)
         int? RealIndexBeforeResize,
         string? SnapTypeAtRequest,
         int? ScrollLeftAtRequest,
-        int? ScrollLeftDuringMove);
+        int? ScrollLeftDuringMove,
+        int? SizeBeforeResize,
+        int? SizeAfterResize,
+        string? ComputedSnapTypeAtRest,
+        int? MillisecondsIntoMove);
 }

@@ -13,6 +13,8 @@ import {
     scrollPlan,
     scrollPositionAt,
     isSwiperCorrection,
+    isSwiperTakingOver,
+    snapTypeToHandBack,
     isResizeDriftProne,
     isInitPhaseEvent,
     isHighFrequencyEvent,
@@ -255,6 +257,34 @@ test("IsSwiperCorrection_AutoplayAtSpeedZero_IsNavigation", () => {
     assert.equal(isSwiperCorrection(0, true, true), false);
 });
 
+test("IsSwiperTakingOver_SwiperMovedTheSlider_IsTakingOver", () => {
+    assert.equal(isSwiperTakingOver(true, false), true);
+    // A lock on one direction does not stop a move the other way.
+    assert.equal(isSwiperTakingOver(true, true), true);
+});
+
+test("IsSwiperTakingOver_NothingToMoveAndNothingLocked_IsTakingOver", () => {
+    // Without a lock Swiper cannot have turned the call down, so its false means the slider already rests
+    // where the call asks - a reset, or the bullet of a slide the slider has not left yet.
+    assert.equal(isSwiperTakingOver(false, false), true);
+});
+
+test("IsSwiperTakingOver_NothingMovedWhileLocked_IsNotTakingOver", () => {
+    // Swiper may have turned the call down, and a call it turns down sends the slider nowhere.
+    assert.equal(isSwiperTakingOver(false, true), false);
+});
+
+test("SnapTypeToHandBack_SwipersOwnNone_IsTheStylesheet", () => {
+    // Swiper writes "none" inline itself around virtual instant moves and scrollbar drags.
+    assert.equal(snapTypeToHandBack("none"), "");
+});
+
+test("SnapTypeToHandBack_StylesheetOrHostValue_IsKept", () => {
+    assert.equal(snapTypeToHandBack(""), "");
+    assert.equal(snapTypeToHandBack("x proximity"), "x proximity");
+    assert.equal(snapTypeToHandBack("x mandatory"), "x mandatory");
+});
+
 test("IsResizeDriftProne_CssModeWithSlidesSizedByCss_IsProne", () => {
     // They take their new size before Swiper's resize handling runs, and the browser re-snaps onto them.
     assert.equal(isResizeDriftProne({ cssMode: true, slidesPerView: "auto" }), true);
@@ -271,6 +301,12 @@ test("IsResizeDriftProne_FreeMode_IsNotProne", () => {
     // Free mode does not snap, so nothing moves the slider before Swiper reads it.
     assert.equal(isResizeDriftProne({ cssMode: true, slidesPerView: "auto", freeMode: { enabled: true } }), false);
     assert.equal(isResizeDriftProne({ cssMode: true, slidesPerView: "auto", freeMode: true }), false);
+});
+
+test("IsResizeDriftProne_WindowResizeUpdatesOff_IsNotProne", () => {
+    // Swiper then has no resize handling for the correction to run ahead of, and the host measures itself.
+    assert.equal(isResizeDriftProne({ cssMode: true, slidesPerView: "auto", updateOnWindowResize: false }), false);
+    assert.equal(isResizeDriftProne({ cssMode: true, slidesPerView: "auto", updateOnWindowResize: true }), true);
 });
 
 test("IsResizeDriftProne_WithoutCssMode_IsNotProne", () => {
