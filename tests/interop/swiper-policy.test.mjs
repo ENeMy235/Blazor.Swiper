@@ -230,23 +230,29 @@ test("ScrollPositionAt_Midway_IsAlreadyMostOfTheWayBecauseTheEaseIsFrontLoaded",
     assert.equal(scrollPositionAt(0, 100, 150, 300), 87.5);
 });
 
-test("IsSwiperCorrection_InstantAndInternal_IsSwiperReseatingItself", () => {
+test("IsSwiperCorrection_InstantInternalAndSilent_IsSwiperReseatingItself", () => {
     // The call Swiper makes after a resize or an update: slideTo(activeIndex, 0, false, true).
-    assert.equal(isSwiperCorrection(0, true), true);
+    assert.equal(isSwiperCorrection(0, false, true), true);
 });
 
 test("IsSwiperCorrection_InternalFlagLeftUnset_IsNavigation", () => {
     // Arrows, bullets and keys never set the flag - not even for an instant move.
-    assert.equal(isSwiperCorrection(0, undefined), false);
-    assert.equal(isSwiperCorrection(0, false), false);
-    assert.equal(isSwiperCorrection(300, undefined), false);
-    assert.equal(isSwiperCorrection(undefined, undefined), false);
+    assert.equal(isSwiperCorrection(0, undefined, undefined), false);
+    assert.equal(isSwiperCorrection(0, false, false), false);
+    assert.equal(isSwiperCorrection(300, undefined, undefined), false);
+    assert.equal(isSwiperCorrection(undefined, undefined, undefined), false);
 });
 
 test("IsSwiperCorrection_InternalButAnimated_IsNavigation", () => {
     // Autoplay flags its moves internal too, and those do send the slider somewhere.
-    assert.equal(isSwiperCorrection(300, true), false);
-    assert.equal(isSwiperCorrection(undefined, true), false);
+    assert.equal(isSwiperCorrection(300, true, true), false);
+    assert.equal(isSwiperCorrection(undefined, true, true), false);
+});
+
+test("IsSwiperCorrection_AutoplayAtSpeedZero_IsNavigation", () => {
+    // At Speed = 0 an autoplay step is instant and internal just like a re-seat, but it runs its callbacks,
+    // and every re-seat in the bundle passes runCallbacks = false.
+    assert.equal(isSwiperCorrection(0, true, true), false);
 });
 
 test("IsResizeDriftProne_CssModeWithSlidesSizedByCss_IsProne", () => {

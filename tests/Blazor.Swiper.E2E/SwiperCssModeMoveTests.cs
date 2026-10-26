@@ -436,6 +436,44 @@ public sealed class SwiperCssModeMoveTests(DemoFixture fixture)
         fixture.AssertNoJsErrors();
     }
 
+    [Fact]
+    public async Task Autoplay_StepAtSpeedZeroDuringAMove_MovesTheSlider()
+    {
+        // Arrange - at speed 0 every autoplay step is an instant move flagged internal, the same shape as
+        // Swiper re-seating itself after a resize
+        await fixture.NavigateToStoryAsync(CssModeStory, CssModeState);
+
+        // Act - the first autoplay step lands part-way through a long move, and autoplay stops after it so the
+        // slider has nowhere else to go
+        var result = await EvaluateAsync(StandaloneSlider + @"
+            const slider = await standaloneSlider({ speed: 0, autoplay: { delay: 800 } });
+            let scrollLeftAtAutoplay = null;
+            slider.el.addEventListener('swiperautoplay', () => {
+                if (scrollLeftAtAutoplay !== null) {
+                    return;
+                }
+                scrollLeftAtAutoplay = Math.round(slider.track.scrollLeft);
+                slider.el.swiper.autoplay.stop();
+            });
+            interop.slideTo(slider.el, 6, 2500);
+            await wait(3200);
+            const result = JSON.stringify({
+                scrollLeft: Math.round(slider.track.scrollLeft),
+                expectedScrollLeft: scrollLeftAtAutoplay ?? -1,
+                otherSlideScrollLeft: slider.el.swiper.slides[6].offsetLeft,
+                inlineSnapType: slider.track.style.scrollSnapType
+            });
+            slider.stage.remove();
+            return result;");
+
+        // Assert - left running, the move writes its own offset over the step every frame and ends on its slide
+        Assert.NotEqual(-1, result.ExpectedScrollLeft);
+        Assert.NotEqual(result.OtherSlideScrollLeft, result.ExpectedScrollLeft);
+        AssertWithinPixels(result.ExpectedScrollLeft, result.ScrollLeft);
+        Assert.Equal(string.Empty, result.InlineSnapType);
+        fixture.AssertNoJsErrors();
+    }
+
     [Theory]
     [InlineData("wrapper.dispatchEvent(new WheelEvent('wheel', { deltaX: 40, bubbles: true, cancelable: true }));")]
     [InlineData("wrapper.dispatchEvent(new WheelEvent('wheel', { deltaY: 40, bubbles: true, cancelable: true }));")]

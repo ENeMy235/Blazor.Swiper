@@ -599,7 +599,7 @@ function scrollToSlide(element, swiper, index, speed) {
     const swiperSlideTo = swiper.slideTo;
     swiper.slideTo = function (slideIndex, slideSpeed, runCallbacks, isInternal, ...rest) {
         const hasMoved = swiperSlideTo.call(this, slideIndex, slideSpeed, runCallbacks, isInternal, ...rest);
-        if (hasMoved && !isSwiperCorrection(slideSpeed, isInternal)) {
+        if (hasMoved && !isSwiperCorrection(slideSpeed, runCallbacks, isInternal)) {
             abandonScrollMove(element);
         }
         return hasMoved;
