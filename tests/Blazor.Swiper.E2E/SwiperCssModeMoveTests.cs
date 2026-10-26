@@ -54,14 +54,14 @@ public sealed class SwiperCssModeMoveTests(DemoFixture fixture)
     // A slider of its own on a 420px stage, for scenarios the story's slider cannot set up. `finishSlider`
     // reads the result and removes the slider again.
     private const string StandaloneSlider = @"
-        const standaloneSlider = async (options, slideWidth) => {
+        const standaloneSlider = async (options, { slideWidth = null, count = 10, stageWidth = 420 } = {}) => {
             const stage = document.createElement('div');
-            stage.style.width = '420px';
+            stage.style.width = `${stageWidth}px`;
             document.body.appendChild(stage);
 
             const el = document.createElement('swiper-container');
             el.setAttribute('init', 'false');
-            for (let i = 0; i < 10; i++) {
+            for (let i = 0; i < count; i++) {
                 const slide = document.createElement('swiper-slide');
                 slide.textContent = `Slide ${i}`;
                 if (slideWidth) {
@@ -80,7 +80,7 @@ public sealed class SwiperCssModeMoveTests(DemoFixture fixture)
         // it sizes itself, so those keep their old offsets until its own resize handling runs; these move with
         // the stage at once, while Swiper still holds the slide grid from before the resize.
         const cssSizedSlider = async (options) => {
-            const slider = await standaloneSlider({ slidesPerView: 'auto', ...options }, '80%');
+            const slider = await standaloneSlider({ slidesPerView: 'auto', ...options }, { slideWidth: '80%' });
             await settle();
             return slider;
         };
@@ -466,6 +466,62 @@ public sealed class SwiperCssModeMoveTests(DemoFixture fixture)
         fixture.AssertNoJsErrors();
     }
 
+    [Theory]
+    [InlineData(2, 390, 844, "SlideTo")]
+    [InlineData(3, 390, 844, "SlideTo")]
+    [InlineData(10, 420, 900, "SlideTo")]
+    [InlineData(10, 420, 900, "Swiper")]
+    public async Task Resize_GrowingWhileOnTheLastSlide_StaysOnIt(int slideCount, int fromWidth, int toWidth, string route)
+    {
+        // Arrange - slides Swiper sizes itself, on the last one: a pager on its last tab, say, as the phone turns
+        // from portrait to landscape. Swiper's own navigation takes the slider there just as well as SlideTo.
+        await fixture.NavigateToStoryAsync(CssModeStory, CssModeState);
+        var moveToLast = route == "SlideTo" ? "interop.slideTo(slider.el, last, 0);" : "slider.el.swiper.slideTo(last, 0);";
+
+        // Act
+        var result = await EvaluateAsync(StandaloneSlider + $@"
+            const slider = await standaloneSlider({{}}, {{ count: {slideCount}, stageWidth: {fromWidth} }});
+            await settle();
+            const last = {slideCount} - 1;
+            {moveToLast}
+            await settle();
+            const realIndexBeforeResize = slider.el.swiper.realIndex;
+            slider.stage.style.width = '{toWidth}px';
+            await settle();
+            return finishSlider(slider, last, {{ realIndexBeforeResize }});");
+
+        // Assert - the wider slider leaves the old scroll position past the end of the track, so the browser
+        // clamps it, and Swiper reads the clamped position against the slide grid from before the resize
+        Assert.Equal(result.ExpectedIndex, result.RealIndexBeforeResize);
+        Assert.Equal(result.ExpectedIndex, result.RealIndex);
+        Assert.Equal(result.ExpectedScrollLeft, result.ScrollLeft);
+        fixture.AssertNoJsErrors();
+    }
+
+    [Fact]
+    public async Task UpdateOptions_CssModeSwitchedOnAfterInit_ResizesWithoutErrors()
+    {
+        // Arrange - cssMode is init-only: switching it on later reaches the params, but Swiper never wires the
+        // scroll handling that goes with it
+        await fixture.NavigateToStoryAsync(CssModeStory, CssModeState);
+
+        // Act
+        var result = await EvaluateAsync(StandaloneSlider + @"
+            const slider = await cssSizedSlider({ cssMode: false });
+            interop.updateOptions(slider.el, { cssMode: true, spaceBetween: 16, slidesPerView: 'auto' });
+            const isCssModeAfterUpdate = slider.el.swiper.params.cssMode;
+            slider.stage.style.width = '900px';
+            await settle();
+            slider.stage.style.width = '300px';
+            await settle();
+            slider.stage.remove();
+            return JSON.stringify({ isCssModeAfterUpdate });");
+
+        // Assert
+        Assert.True(result.IsCssModeAfterUpdate);
+        fixture.AssertNoJsErrors();
+    }
+
     [Fact]
     public async Task SlideTo_StartedWhileSwiperHoldsScrollSnapOff_HandsScrollSnapBack()
     {
@@ -482,13 +538,11 @@ public sealed class SwiperCssModeMoveTests(DemoFixture fixture)
             const snapTypeAtRequest = slider.track.style.scrollSnapType;
             const scrollLeftAtRequest = Math.round(slider.track.scrollLeft);
             interop.slideTo(slider.el, 6, 600);
-            await wait(150);
-            const scrollLeftDuringMove = Math.round(slider.track.scrollLeft);
             await settle();
             const result = JSON.stringify({
                 snapTypeAtRequest,
                 scrollLeftAtRequest,
-                scrollLeftDuringMove,
+                scrollLeftAfterMove: Math.round(slider.track.scrollLeft),
                 inlineSnapType: slider.track.style.scrollSnapType,
                 computedSnapType: getComputedStyle(slider.track).scrollSnapType
             });
@@ -498,7 +552,38 @@ public sealed class SwiperCssModeMoveTests(DemoFixture fixture)
         // Assert - the move found Swiper's own 'none' and must not hand that back: snapping would stay off for
         // good, and the slider would rest wherever a swipe is released
         Assert.Equal("none", result.SnapTypeAtRequest);
-        Assert.NotEqual(result.ScrollLeftAtRequest, result.ScrollLeftDuringMove);
+        Assert.NotEqual(result.ScrollLeftAtRequest, result.ScrollLeftAfterMove);
+        Assert.Equal(string.Empty, result.InlineSnapType);
+        Assert.Contains("mandatory", result.ComputedSnapType);
+        fixture.AssertNoJsErrors();
+    }
+
+    [Fact]
+    public async Task SwiperSlideTo_InstantOnAVirtualSliderDuringAMove_LandsOnItsSlide()
+    {
+        // Arrange - a virtual slider. Swiper switches scroll-snap off itself around an instant move there, and
+        // puts it back a frame later, once the move's slides are rendered
+        await fixture.NavigateToStoryAsync(CssModeStory, CssModeState);
+
+        // Act - Swiper's own instant navigation, part-way through a move of the host's
+        var result = await EvaluateAsync(StandaloneSlider + @"
+            const slider = await standaloneSlider({ virtual: true });
+            await settle();
+            interop.slideTo(slider.el, 1, 1500);
+            await wait(300);
+            slider.el.swiper.slideTo(7, 0);
+            await wait(1600);
+            const result = JSON.stringify({
+                realIndex: slider.el.swiper.realIndex,
+                inlineSnapType: slider.track.style.scrollSnapType,
+                computedSnapType: getComputedStyle(slider.track).scrollSnapType
+            });
+            slider.stage.remove();
+            return result;");
+
+        // Assert - handing scroll-snap back inside Swiper's window lets the browser snap the wrapper onto a slide
+        // that is rendered already, before the one Swiper is moving to
+        Assert.Equal(7, result.RealIndex);
         Assert.Equal(string.Empty, result.InlineSnapType);
         Assert.Contains("mandatory", result.ComputedSnapType);
         fixture.AssertNoJsErrors();
@@ -813,9 +898,10 @@ public sealed class SwiperCssModeMoveTests(DemoFixture fixture)
         int? RealIndexBeforeResize,
         string? SnapTypeAtRequest,
         int? ScrollLeftAtRequest,
-        int? ScrollLeftDuringMove,
+        int? ScrollLeftAfterMove,
         int? SizeBeforeResize,
         int? SizeAfterResize,
         string? ComputedSnapTypeAtRest,
-        int? MillisecondsIntoMove);
+        int? MillisecondsIntoMove,
+        bool? IsCssModeAfterUpdate);
 }

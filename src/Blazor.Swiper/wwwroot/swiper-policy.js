@@ -314,20 +314,33 @@ export function snapTypeToHandBack(found) {
 }
 
 /**
- * Whether a resize of the container can leave Swiper on another slide than the one it was on
- * (https://github.com/nolimits4web/swiper/issues/8246).
+ * How to keep a resize from leaving Swiper on another slide than the one it was on, or null when
+ * there is nothing to keep (https://github.com/nolimits4web/swiper/issues/8246).
  *
- * In cssMode the scroll position is the slider's state. Slides sized by CSS take their new size
- * before Swiper's resize handling runs, the browser re-snaps the scroller onto the same slide at
- * its new offset, and Swiper reads that re-snap against the slide grid from before the resize.
- * Slides Swiper sizes itself have not moved by then, and free mode does not snap. With
- * `updateOnWindowResize` off Swiper does not re-seat on a resize at all, and the host measures the
- * slider itself when it chooses to.
+ * In cssMode the scroll position is the slider's state, and a layout change moves the scroller before
+ * Swiper's resize handling has measured that layout. Swiper reads the scroll against its old slide
+ * grid, and then re-seats the slider onto the slide it misread.
+ *
+ * - "remeasure": slides sized by CSS take their new size at once, and the browser re-snaps the
+ *   scroller onto the same slide at its new offset. Measured again, that position names the slide.
+ * - "restoreIndex": slides Swiper sizes itself keep their size until it measures them, so only a
+ *   clamp moves the scroller - the slider grew past the end of its track - and that position means
+ *   nothing. The index Swiper held when the layout changed does, and an observer of its own sees that
+ *   change before Swiper's ResizeObserver-driven resize, which is why it needs that observer.
+ *
+ * Free mode does not snap, and with `updateOnWindowResize` off Swiper does not re-seat on a resize.
  */
-export function isResizeDriftProne(params) {
+export function resizeDriftCorrection(params) {
     const isFreeMode = params.freeMode === true || params.freeMode?.enabled === true;
-    const isResizeHandled = params.updateOnWindowResize !== false;
-    return params.cssMode === true && params.slidesPerView === "auto" && !isFreeMode && isResizeHandled;
+    if (params.cssMode !== true || isFreeMode || params.updateOnWindowResize === false) {
+        return null;
+    }
+
+    if (params.slidesPerView === "auto") {
+        return "remeasure";
+    }
+
+    return params.resizeObserver === false ? null : "restoreIndex";
 }
 
 // --- events -------------------------------------------------------------------------------------

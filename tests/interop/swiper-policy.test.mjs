@@ -15,7 +15,7 @@ import {
     isSwiperCorrection,
     isSwiperTakingOver,
     snapTypeToHandBack,
-    isResizeDriftProne,
+    resizeDriftCorrection,
     isInitPhaseEvent,
     isHighFrequencyEvent,
     shouldSendThrottledEvent,
@@ -285,34 +285,42 @@ test("SnapTypeToHandBack_StylesheetOrHostValue_IsKept", () => {
     assert.equal(snapTypeToHandBack("x mandatory"), "x mandatory");
 });
 
-test("IsResizeDriftProne_CssModeWithSlidesSizedByCss_IsProne", () => {
+test("ResizeDriftCorrection_SlidesSizedByCss_RemeasuresTheReSnappedPosition", () => {
     // They take their new size before Swiper's resize handling runs, and the browser re-snaps onto them.
-    assert.equal(isResizeDriftProne({ cssMode: true, slidesPerView: "auto" }), true);
-    assert.equal(isResizeDriftProne({ cssMode: true, slidesPerView: "auto", freeMode: { enabled: false } }), true);
+    assert.equal(resizeDriftCorrection({ cssMode: true, slidesPerView: "auto" }), "remeasure");
+    assert.equal(resizeDriftCorrection({ cssMode: true, slidesPerView: "auto", freeMode: { enabled: false } }), "remeasure");
+    // Re-measuring needs no observer of its own, so Swiper's window-resize fallback is enough.
+    assert.equal(resizeDriftCorrection({ cssMode: true, slidesPerView: "auto", resizeObserver: false }), "remeasure");
 });
 
-test("IsResizeDriftProne_SlidesSizedBySwiper_IsNotProne", () => {
-    // Swiper pins their width in px, so nothing moves until its own resize handling sizes them.
-    assert.equal(isResizeDriftProne({ cssMode: true, slidesPerView: 1 }), false);
-    assert.equal(isResizeDriftProne({ cssMode: true, slidesPerView: 2.5 }), false);
+test("ResizeDriftCorrection_SlidesSizedBySwiper_RestoresTheIndexItHeld", () => {
+    // They keep their size until onResize, so only a clamp moves the scroller, and its position means nothing.
+    assert.equal(resizeDriftCorrection({ cssMode: true, slidesPerView: 1 }), "restoreIndex");
+    assert.equal(resizeDriftCorrection({ cssMode: true, slidesPerView: 2.5 }), "restoreIndex");
+    assert.equal(resizeDriftCorrection({ cssMode: true }), "restoreIndex");
 });
 
-test("IsResizeDriftProne_FreeMode_IsNotProne", () => {
-    // Free mode does not snap, so nothing moves the slider before Swiper reads it.
-    assert.equal(isResizeDriftProne({ cssMode: true, slidesPerView: "auto", freeMode: { enabled: true } }), false);
-    assert.equal(isResizeDriftProne({ cssMode: true, slidesPerView: "auto", freeMode: true }), false);
+test("ResizeDriftCorrection_SlidesSizedBySwiperWithoutItsResizeObserver_DoesNothing", () => {
+    // The index is taken from an observer that has to see the layout change before Swiper's own resize does.
+    assert.equal(resizeDriftCorrection({ cssMode: true, slidesPerView: 1, resizeObserver: false }), null);
 });
 
-test("IsResizeDriftProne_WindowResizeUpdatesOff_IsNotProne", () => {
-    // Swiper then has no resize handling for the correction to run ahead of, and the host measures itself.
-    assert.equal(isResizeDriftProne({ cssMode: true, slidesPerView: "auto", updateOnWindowResize: false }), false);
-    assert.equal(isResizeDriftProne({ cssMode: true, slidesPerView: "auto", updateOnWindowResize: true }), true);
+test("ResizeDriftCorrection_FreeMode_DoesNothing", () => {
+    // Free mode does not snap, and its position is whatever the user left it at.
+    assert.equal(resizeDriftCorrection({ cssMode: true, slidesPerView: "auto", freeMode: { enabled: true } }), null);
+    assert.equal(resizeDriftCorrection({ cssMode: true, slidesPerView: 1, freeMode: true }), null);
 });
 
-test("IsResizeDriftProne_WithoutCssMode_IsNotProne", () => {
-    // A transformed track has no scroll position for the browser to re-snap.
-    assert.equal(isResizeDriftProne({ cssMode: false, slidesPerView: "auto" }), false);
-    assert.equal(isResizeDriftProne({ slidesPerView: "auto" }), false);
+test("ResizeDriftCorrection_WindowResizeUpdatesOff_DoesNothing", () => {
+    // Swiper then does not re-seat on a resize at all, and the host measures the slider itself.
+    assert.equal(resizeDriftCorrection({ cssMode: true, slidesPerView: "auto", updateOnWindowResize: false }), null);
+    assert.equal(resizeDriftCorrection({ cssMode: true, slidesPerView: 1, updateOnWindowResize: false }), null);
+});
+
+test("ResizeDriftCorrection_WithoutCssMode_DoesNothing", () => {
+    // A transformed track has no scroll position for a layout change to move.
+    assert.equal(resizeDriftCorrection({ cssMode: false, slidesPerView: "auto" }), null);
+    assert.equal(resizeDriftCorrection({ slidesPerView: 1 }), null);
 });
 
 test("ChangedOptions_MemberThatMoved_IsTheOnlyOneReported", () => {
