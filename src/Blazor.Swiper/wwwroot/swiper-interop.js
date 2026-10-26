@@ -533,10 +533,13 @@ export function slideTo(element, index, speed) {
 //
 // There is one move per slider, and a new request ends the one in flight. Left running, the older move
 // keeps writing its own target every frame and can be the one that lands last - a request that finds the
-// slider already on its slide starts no animation at all, so nothing would even compete with it. Each
-// move also hands scroll-snap back to the value it found, which for a move started during another is that
-// one's "none": snapping would then stay off for good, and the slider would rest wherever a swipe is
-// released, between two slides.
+// slider already on its slide starts no animation at all, so nothing would even compete with it.
+//
+// Ending a move hands scroll-snap back to Swiper's stylesheet - an empty inline value - and never to the
+// inline value the move found. That can be a "none" that was never the slider's resting state: another
+// move's, or Swiper's own, which it writes for a frame around every instant move of a virtual slider and
+// for the length of a scrollbar drag. Handed back, it would leave snapping off for good, and the slider
+// would rest wherever a swipe is released, between two slides.
 //
 // Writing the offset every frame also overwrites whatever else moves the slider meanwhile, so the move
 // steps aside for all of it (abandonScrollMove): Swiper navigating by any route, an anchor and a drag.
@@ -564,7 +567,6 @@ function scrollToSlide(element, swiper, index, speed) {
         return;
     }
 
-    const previousSnapType = wrapper.style.scrollSnapType;
     wrapper.style.scrollSnapType = "none";
 
     let frameRequest = 0;
@@ -579,7 +581,7 @@ function scrollToSlide(element, swiper, index, speed) {
         if (state.endScrollMove === end) {
             state.endScrollMove = null;
         }
-        wrapper.style.scrollSnapType = previousSnapType;
+        wrapper.style.scrollSnapType = "";
     };
 
     // Swiper's arrows, pagination and keyboard never pass through this module, and none of them announces

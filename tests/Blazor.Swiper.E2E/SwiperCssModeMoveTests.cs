@@ -51,38 +51,46 @@ public sealed class SwiperCssModeMoveTests(DemoFixture fixture)
         });
     ";
 
-    // A slider of its own whose slides are sized by CSS - 80% of a 420px stage - rather than by Swiper.
-    // Swiper pins the width of every slide it sizes itself, so those keep their old offsets until its own
-    // resize handling runs; these move with the stage at once, while Swiper still holds the slide grid from
-    // before the resize. `finishSized` reads the result and removes the slider again.
-    private const string CssSizedSlider = @"
-        const cssSizedSlider = async (options) => {
+    // A slider of its own on a 420px stage, for scenarios the story's slider cannot set up. `finishSlider`
+    // reads the result and removes the slider again.
+    private const string StandaloneSlider = @"
+        const standaloneSlider = async (options, slideWidth) => {
             const stage = document.createElement('div');
             stage.style.width = '420px';
             document.body.appendChild(stage);
 
-            const sized = document.createElement('swiper-container');
-            sized.setAttribute('init', 'false');
+            const el = document.createElement('swiper-container');
+            el.setAttribute('init', 'false');
             for (let i = 0; i < 10; i++) {
                 const slide = document.createElement('swiper-slide');
                 slide.textContent = `Slide ${i}`;
-                slide.style.width = '80%';
+                if (slideWidth) {
+                    slide.style.width = slideWidth;
+                }
                 slide.style.height = '120px';
-                sized.appendChild(slide);
+                el.appendChild(slide);
             }
-            stage.appendChild(sized);
+            stage.appendChild(el);
 
-            await interop.initialize(sized, { cssMode: true, slidesPerView: 'auto', spaceBetween: 16, ...options }, null, [], 0, false);
-            await settle();
-            return { stage, sized, track: sized.swiper.wrapperEl };
+            await interop.initialize(el, { cssMode: true, spaceBetween: 16, ...options }, null, [], 0, false);
+            return { stage, el, track: el.swiper.wrapperEl };
         };
 
-        const finishSized = ({ stage, sized, track }, index, extra) => {
+        // Slides sized by CSS - 80% of the stage - rather than by Swiper. Swiper pins the width of every slide
+        // it sizes itself, so those keep their old offsets until its own resize handling runs; these move with
+        // the stage at once, while Swiper still holds the slide grid from before the resize.
+        const cssSizedSlider = async (options) => {
+            const slider = await standaloneSlider({ slidesPerView: 'auto', ...options }, '80%');
+            await settle();
+            return slider;
+        };
+
+        const finishSlider = ({ stage, el, track }, index, extra) => {
             const json = JSON.stringify({
                 scrollLeft: Math.round(track.scrollLeft),
-                realIndex: sized.swiper.realIndex,
+                realIndex: el.swiper.realIndex,
                 expectedIndex: index,
-                expectedScrollLeft: sized.swiper.slides[index].offsetLeft,
+                expectedScrollLeft: el.swiper.slides[index].offsetLeft,
                 ...extra
             });
             stage.remove();
@@ -325,13 +333,13 @@ public sealed class SwiperCssModeMoveTests(DemoFixture fixture)
         await fixture.NavigateToStoryAsync(CssModeStory, CssModeState);
 
         // Act - the host resizes the slider and asks for an instant move in the same task
-        var result = await EvaluateAsync(CssSizedSlider + $@"
+        var result = await EvaluateAsync(StandaloneSlider + $@"
             const slider = await cssSizedSlider({{}});
-            const offsetBeforeResize = slider.sized.swiper.slides[5].offsetLeft;
+            const offsetBeforeResize = slider.el.swiper.slides[5].offsetLeft;
             slider.stage.style.width = '{resizedWidth}';
-            interop.slideTo(slider.sized, 5, 0);
+            interop.slideTo(slider.el, 5, 0);
             await settle();
-            return finishSized(slider, 5, {{ otherSlideScrollLeft: offsetBeforeResize }});");
+            return finishSlider(slider, 5, {{ otherSlideScrollLeft: offsetBeforeResize }});");
 
         // Assert - Swiper reads its index off the old slide grid on the first scroll, and re-seats onto
         // that slide when it handles the resize
@@ -350,13 +358,13 @@ public sealed class SwiperCssModeMoveTests(DemoFixture fixture)
         await fixture.NavigateToStoryAsync(CssModeStory, CssModeState);
 
         // Act
-        var result = await EvaluateAsync(CssSizedSlider + $@"
+        var result = await EvaluateAsync(StandaloneSlider + $@"
             const slider = await cssSizedSlider({{ initialSlide: 5 }});
-            const realIndexBeforeResize = slider.sized.swiper.realIndex;
-            const offsetBeforeResize = slider.sized.swiper.slides[5].offsetLeft;
+            const realIndexBeforeResize = slider.el.swiper.realIndex;
+            const offsetBeforeResize = slider.el.swiper.slides[5].offsetLeft;
             slider.stage.style.width = '{resizedWidth}';
             await settle();
-            return finishSized(slider, 5, {{ realIndexBeforeResize, otherSlideScrollLeft: offsetBeforeResize }});");
+            return finishSlider(slider, 5, {{ realIndexBeforeResize, otherSlideScrollLeft: offsetBeforeResize }});");
 
         // Assert - the browser re-snaps onto the same slide at its new offset, and Swiper reads that re-snap
         // against the slide grid from before the resize: https://github.com/nolimits4web/swiper/issues/8246
@@ -375,18 +383,56 @@ public sealed class SwiperCssModeMoveTests(DemoFixture fixture)
         await fixture.NavigateToStoryAsync(CssModeStory, CssModeState);
 
         // Act
-        var result = await EvaluateAsync(CssSizedSlider + @"
+        var result = await EvaluateAsync(StandaloneSlider + @"
             const slider = await cssSizedSlider({ initialSlide: 5, freeMode: true });
-            const realIndexBeforeResize = slider.sized.swiper.realIndex;
-            const offsetBeforeResize = slider.sized.swiper.slides[5].offsetLeft;
+            const realIndexBeforeResize = slider.el.swiper.realIndex;
+            const offsetBeforeResize = slider.el.swiper.slides[5].offsetLeft;
             slider.stage.style.width = '900px';
             await settle();
-            return finishSized(slider, 5, { realIndexBeforeResize, otherSlideScrollLeft: offsetBeforeResize });");
+            return finishSlider(slider, 5, { realIndexBeforeResize, otherSlideScrollLeft: offsetBeforeResize });");
 
         // Assert - read against the new slide grid, that untouched position would name the third slide
         Assert.Equal(result.ExpectedIndex, result.RealIndexBeforeResize);
         Assert.Equal(result.ExpectedIndex, result.RealIndex);
         Assert.Equal(result.ExpectedScrollLeft, result.ScrollLeft);
+        fixture.AssertNoJsErrors();
+    }
+
+    [Fact]
+    public async Task SlideTo_StartedWhileSwiperHoldsScrollSnapOff_HandsScrollSnapBack()
+    {
+        // Arrange - a virtual slider. Swiper switches scroll-snap off itself for one frame around every instant
+        // move it makes there, and an anchor is one
+        await fixture.NavigateToStoryAsync(CssModeStory, CssModeState);
+
+        // Act - the host anchors and moves in the same task, so the move starts inside that frame. Where the
+        // move heads is not the point here, only what it leaves behind
+        var result = await EvaluateAsync(StandaloneSlider + @"
+            const slider = await standaloneSlider({ virtual: true });
+            await settle();
+            interop.updateAndAnchor(slider.el, 2);
+            const snapTypeAtRequest = slider.track.style.scrollSnapType;
+            const scrollLeftAtRequest = Math.round(slider.track.scrollLeft);
+            interop.slideTo(slider.el, 6, 600);
+            await wait(150);
+            const scrollLeftDuringMove = Math.round(slider.track.scrollLeft);
+            await settle();
+            const result = JSON.stringify({
+                snapTypeAtRequest,
+                scrollLeftAtRequest,
+                scrollLeftDuringMove,
+                inlineSnapType: slider.track.style.scrollSnapType,
+                computedSnapType: getComputedStyle(slider.track).scrollSnapType
+            });
+            slider.stage.remove();
+            return result;");
+
+        // Assert - the move found Swiper's own 'none' and must not hand that back: snapping would stay off for
+        // good, and the slider would rest wherever a swipe is released
+        Assert.Equal("none", result.SnapTypeAtRequest);
+        Assert.NotEqual(result.ScrollLeftAtRequest, result.ScrollLeftDuringMove);
+        Assert.Equal(string.Empty, result.InlineSnapType);
+        Assert.Contains("mandatory", result.ComputedSnapType);
         fixture.AssertNoJsErrors();
     }
 
@@ -631,5 +677,8 @@ public sealed class SwiperCssModeMoveTests(DemoFixture fixture)
         int? ExpectedIndex,
         int[]? SlideOffsets,
         int? HighestScrollLeftAfterResize,
-        int? RealIndexBeforeResize);
+        int? RealIndexBeforeResize,
+        string? SnapTypeAtRequest,
+        int? ScrollLeftAtRequest,
+        int? ScrollLeftDuringMove);
 }
