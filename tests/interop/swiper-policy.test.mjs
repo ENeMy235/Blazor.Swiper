@@ -13,6 +13,7 @@ import {
     scrollPlan,
     scrollPositionAt,
     isSwiperCorrection,
+    isResizeDriftProne,
     isInitPhaseEvent,
     isHighFrequencyEvent,
     shouldSendThrottledEvent,
@@ -246,6 +247,30 @@ test("IsSwiperCorrection_InternalButAnimated_IsNavigation", () => {
     // Autoplay flags its moves internal too, and those do send the slider somewhere.
     assert.equal(isSwiperCorrection(300, true), false);
     assert.equal(isSwiperCorrection(undefined, true), false);
+});
+
+test("IsResizeDriftProne_CssModeWithSlidesSizedByCss_IsProne", () => {
+    // They take their new size before Swiper's resize handling runs, and the browser re-snaps onto them.
+    assert.equal(isResizeDriftProne({ cssMode: true, slidesPerView: "auto" }), true);
+    assert.equal(isResizeDriftProne({ cssMode: true, slidesPerView: "auto", freeMode: { enabled: false } }), true);
+});
+
+test("IsResizeDriftProne_SlidesSizedBySwiper_IsNotProne", () => {
+    // Swiper pins their width in px, so nothing moves until its own resize handling sizes them.
+    assert.equal(isResizeDriftProne({ cssMode: true, slidesPerView: 1 }), false);
+    assert.equal(isResizeDriftProne({ cssMode: true, slidesPerView: 2.5 }), false);
+});
+
+test("IsResizeDriftProne_FreeMode_IsNotProne", () => {
+    // Free mode does not snap, so nothing moves the slider before Swiper reads it.
+    assert.equal(isResizeDriftProne({ cssMode: true, slidesPerView: "auto", freeMode: { enabled: true } }), false);
+    assert.equal(isResizeDriftProne({ cssMode: true, slidesPerView: "auto", freeMode: true }), false);
+});
+
+test("IsResizeDriftProne_WithoutCssMode_IsNotProne", () => {
+    // A transformed track has no scroll position for the browser to re-snap.
+    assert.equal(isResizeDriftProne({ cssMode: false, slidesPerView: "auto" }), false);
+    assert.equal(isResizeDriftProne({ slidesPerView: "auto" }), false);
 });
 
 test("ChangedOptions_MemberThatMoved_IsTheOnlyOneReported", () => {

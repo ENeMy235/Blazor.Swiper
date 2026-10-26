@@ -285,6 +285,20 @@ export function isSwiperCorrection(speed, isInternal) {
     return speed === 0 && isInternal === true;
 }
 
+/**
+ * Whether a resize of the container can leave Swiper on another slide than the one it was on
+ * (https://github.com/nolimits4web/swiper/issues/8246).
+ *
+ * In cssMode the scroll position is the slider's state. Slides sized by CSS take their new size
+ * before Swiper's resize handling runs, the browser re-snaps the scroller onto the same slide at
+ * its new offset, and Swiper reads that re-snap against the slide grid from before the resize.
+ * Slides Swiper sizes itself have not moved by then, and free mode does not snap.
+ */
+export function isResizeDriftProne(params) {
+    const isFreeMode = params.freeMode === true || params.freeMode?.enabled === true;
+    return params.cssMode === true && params.slidesPerView === "auto" && !isFreeMode;
+}
+
 // --- events -------------------------------------------------------------------------------------
 
 /**

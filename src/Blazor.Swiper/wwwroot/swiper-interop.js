@@ -21,6 +21,7 @@ import {
     scrollPlan,
     scrollPositionAt,
     isSwiperCorrection,
+    isResizeDriftProne,
     isInitPhaseEvent,
     isInitOnlyParam,
     isHighFrequencyEvent,
@@ -126,6 +127,7 @@ export async function initialize(element, options, dotNetRef, subscribedEvents, 
 
     if (swiper) {
         attachIntendedIndexGuard(element, swiper);
+        attachResizeDriftCorrection(element, swiper);
 
         if (swiper.params.autoHeight) {
             attachLiveAutoHeight(element, swiper);
@@ -701,6 +703,29 @@ function attachIntendedIndexGuard(element, swiper) {
                 applyAnchor(swiper, state.intendedIndex);
             }
         });
+    });
+}
+
+// A stopgap for https://github.com/nolimits4web/swiper/issues/8246, fixed upstream by
+// https://github.com/nolimits4web/swiper/pull/8250 - delete it once the vendored bundle carries that fix.
+//
+// Swiper reads the browser's re-snap of a cssMode slider against the slide grid from before the resize
+// (isResizeDriftProne), and its onResize then re-seats the slider onto the slide it misread. The resize DOM
+// event is dispatched from Swiper's emit ahead of that onResize listener, so it is the one point between the
+// two: measuring the slides and reading the scroll position again here hands onResize the slide the slider
+// is really on. onResize measures them once more, which settles on the same grid.
+function attachResizeDriftCorrection(element, swiper) {
+    listen(element, "resize", () => {
+        if (!isLiveSwiper(element, swiper) || !isResizeDriftProne(swiper.params)) {
+            return;
+        }
+        // onResize skips a slider that is not laid out, and measuring one would only read zeroes.
+        if (swiper.el.offsetWidth === 0) {
+            return;
+        }
+        swiper.updateSize();
+        swiper.updateSlides();
+        swiper.onScroll();
     });
 }
 

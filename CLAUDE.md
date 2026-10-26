@@ -165,6 +165,15 @@ transformed track, and setting it forces computed `overflow-x` from visible to a
 wrapper into a one-slide-wide clip box that travels with the transform, so every slide but the first
 vanishes.
 
+**A resize moves a cssMode slider with CSS-sized slides onto another slide - in Swiper itself.** The
+slides take their new size before Swiper's resize handling runs, the browser re-snaps the wrapper onto
+the same slide, and Swiper reads that re-snap against its old slide grid, then re-seats onto the slide
+it misread (https://github.com/nolimits4web/swiper/issues/8246). `attachResizeDriftCorrection` works
+around it until a vendored bundle carries the fix proposed in
+https://github.com/nolimits4web/swiper/pull/8250; delete it when re-vendoring one that does, and keep
+`Resize_CssSizedSlidesAtRest_StaysOnTheSlide` as the proof. The intent guard used to hide this only
+because the intent never cleared in cssMode.
+
 **The element can be gone before `initialize` runs.** A conditionally rendered pager can collapse on
 the very tap that scheduled it, and `await customElements.whenDefined(...)` widens the window
 further. Check `element` and `element.isConnected` on both sides of that await.
