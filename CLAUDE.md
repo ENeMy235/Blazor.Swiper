@@ -175,11 +175,15 @@ CSS-sized half upstream, so a re-vendored bundle that carries it retires only th
 `Resize_CssSizedSlidesAtRest_StaysOnTheSlide` and `Resize_GrowingWhileOnTheLastSlide_StaysOnIt` are the
 proof. The intent guard used to hide all this only because the intent never cleared in cssMode. Centered
 slides Swiper sizes itself are re-snapped rather than clamped, and take the `"restoreIndex"` half too
-(`Resize_CenteredSlidesAtRest_StaysOnTheSlide`). Swiper handles the resize a frame after its
-ResizeObserver fires, and a move can land in that frame - every frame of a width transition is one. Where
-the scroller sits cannot tell that move from a drift (a step back from the last slide lands on the clamped
-end too), so whatever takes the slider over stands the held index down (`abandonScrollMove`);
-`SlideTo_InstantMoveInTheFrameAfterAResize_EndsOnTheRequestedSlide` holds it to that.
+(`Resize_CenteredSlidesAtRest_StaysOnTheSlide`). That half restores whether the slider was at the end of
+its track as well (`shouldRestoreEnd`): Swiper's resize keeps a slider with `slidesPerView` above 1 at the
+end only while it knows it is there, so a fractional one would otherwise rest on its last slide's edge with
+that slide cut off. Swiper handles the resize a frame after its ResizeObserver fires, and a move can land
+in that frame - every frame of a width transition is one. Where the scroller sits cannot tell that move
+from a drift (a step back from the last slide lands on the clamped end too, and right to left or under CSS
+zoom the clamp rests a pixel or more off the end), so whatever takes the slider over stands what was held
+down (`abandonScrollMove`); `SlideTo_InstantMoveInTheFrameAfterAResize_EndsOnTheRequestedSlide` holds it
+to that.
 
 **The element can be gone before `initialize` runs.** A conditionally rendered pager can collapse on
 the very tap that scheduled it, and `await customElements.whenDefined(...)` widens the window

@@ -17,6 +17,7 @@ import {
     snapTypeToHandBack,
     resizeDriftCorrection,
     shouldRestoreIndex,
+    shouldRestoreEnd,
     isInitPhaseEvent,
     isHighFrequencyEvent,
     shouldSendThrottledEvent,
@@ -347,6 +348,22 @@ test("ShouldRestoreIndex_NothingHeld_IsLeftAlone", () => {
 test("ShouldRestoreIndex_MoveInFlight_IsLeftAlone", () => {
     // The move follows its own slide through the resize.
     assert.equal(shouldRestoreIndex(9, 8, true), false);
+});
+
+test("ShouldRestoreEnd_SliderTakenOffTheEndItHeld_IsRestored", () => {
+    assert.equal(shouldRestoreEnd(true, false, false), true);
+});
+
+test("ShouldRestoreEnd_SliderStillAtTheEnd_IsLeftAlone", () => {
+    assert.equal(shouldRestoreEnd(true, true, false), false);
+});
+
+test("ShouldRestoreEnd_SliderNotAtTheEndWhenTheLayoutChanged_IsLeftAlone", () => {
+    assert.equal(shouldRestoreEnd(false, false, false), false);
+});
+
+test("ShouldRestoreEnd_MoveInFlight_IsLeftAlone", () => {
+    assert.equal(shouldRestoreEnd(true, false, true), false);
 });
 
 test("ChangedOptions_MemberThatMoved_IsTheOnlyOneReported", () => {

@@ -356,6 +356,16 @@ export function shouldRestoreIndex(heldIndex, activeIndex, isMoveInFlight) {
     return heldIndex !== null && heldIndex !== activeIndex && !isMoveInFlight;
 }
 
+/**
+ * Whether to tell Swiper again that a slider at the end of its track when its layout changed still is,
+ * alongside `shouldRestoreIndex`. Swiper's resize handling keeps a slider with `slidesPerView` above 1 at
+ * the end only while it knows it is there, and the clamp's scroll has told it otherwise - a fractional
+ * `slidesPerView` would then be re-seated onto its last slide's edge, the last slide cut off.
+ */
+export function shouldRestoreEnd(wasAtEnd, isAtEnd, isMoveInFlight) {
+    return wasAtEnd && !isAtEnd && !isMoveInFlight;
+}
+
 // --- events -------------------------------------------------------------------------------------
 
 /**

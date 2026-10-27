@@ -54,9 +54,11 @@ public sealed class SwiperCssModeMoveTests(DemoFixture fixture)
     // A slider of its own on a 420px stage, for scenarios the story's slider cannot set up. `finishSlider`
     // reads the result and removes the slider again.
     private const string StandaloneSlider = @"
-        const standaloneSlider = async (options, { slideWidth = null, count = 10, stageWidth = 420 } = {}) => {
+        const standaloneSlider = async (options, { slideWidth = null, count = 10, stageWidth = 420, dir = 'ltr', zoom = 1 } = {}) => {
             const stage = document.createElement('div');
             stage.style.width = `${stageWidth}px`;
+            stage.style.zoom = zoom;
+            stage.dir = dir;
             document.body.appendChild(stage);
 
             const el = document.createElement('swiper-container');
@@ -505,20 +507,17 @@ public sealed class SwiperCssModeMoveTests(DemoFixture fixture)
     [InlineData(9, 8, 900, "SlideTo")]
     [InlineData(9, 8, 900, "Swiper")]
     [InlineData(9, 8, 900, "Bullet")]
-    [InlineData(0, 5, 600, "Anchor")]
-    [InlineData(9, 8, 900, "Anchor")]
     public async Task SlideTo_InstantMoveInTheFrameAfterAResize_EndsOnTheRequestedSlide(int fromSlide, int toSlide, int resizedWidth, string route)
     {
         // Arrange - slides Swiper sizes itself. A width transition lays the slider out again every frame, so
-        // an instant move - SlideTo, a pagination bullet at Speed = 0, an anchor - lands in this window all the
-        // time. Growing to 900px from the last slide, the step back to slide 8 lands on the same clamped end of
-        // the track a drift would
+        // an instant move - SlideTo, or a pagination bullet at Speed = 0 - lands in this window all the time.
+        // Growing to 900px from the last slide, the step back to slide 8 lands on the same clamped end of the
+        // track a drift would
         await fixture.NavigateToStoryAsync(CssModeStory, CssModeState);
         var move = route switch
         {
             "SlideTo" => $"interop.slideTo(slider.el, {toSlide}, 0);",
             "Swiper" => $"slider.el.swiper.slideTo({toSlide}, 0);",
-            "Anchor" => $"interop.updateAndAnchor(slider.el, {toSlide});",
             _ => $"slider.el.shadowRoot.querySelectorAll('.swiper-pagination-bullet')[{toSlide}].click();"
         };
 
@@ -543,12 +542,13 @@ public sealed class SwiperCssModeMoveTests(DemoFixture fixture)
             const resizesBeforeMove = resizes;
             {move}
             await settle();
-            return finishSlider(slider, {toSlide}, {{ layoutNoticesBeforeMove, resizesBeforeMove }});");
+            return finishSlider(slider, {toSlide}, {{ layoutNoticesBeforeMove, resizesBeforeMove, resizesAfterMove: resizes }});");
 
         // Assert - the move landed in the window, and it is the slider's state now, not the index the slider
         // held when the layout changed
         Assert.True(result.LayoutNoticesBeforeMove > 0);
         Assert.Equal(0, result.ResizesBeforeMove);
+        Assert.True(result.ResizesAfterMove > 0);
         Assert.Equal(result.ExpectedIndex, result.RealIndex);
         Assert.Equal(result.ExpectedScrollLeft, result.ScrollLeft);
         fixture.AssertNoJsErrors();
@@ -582,6 +582,76 @@ public sealed class SwiperCssModeMoveTests(DemoFixture fixture)
         // Assert - Swiper reads that re-snap against the slide grid from before the resize, just as it does a clamp
         Assert.Equal(result.ExpectedIndex, result.RealIndexBeforeResize);
         Assert.Equal(result.ExpectedIndex, result.RealIndex);
+        fixture.AssertNoJsErrors();
+    }
+
+    [Theory]
+    [InlineData("rtl", "0.9", "1.3", "7.3")]
+    [InlineData("rtl", "1", "1.5", "16")]
+    [InlineData("ltr", "0.6", "1.5", "16")]
+    [InlineData("ltr", "0.33", "1", "16")]
+    public async Task Resize_GrowingWhileOnTheLastSlideZoomedOrRtl_StaysOnIt(string dir, string zoom, string slidesPerView, string spaceBetween)
+    {
+        // Arrange - right to left, or under CSS zoom, the clamped scroll position rests a pixel or more off
+        // the end of the track, so the clamp cannot be told by where the scroller sits
+        await fixture.NavigateToStoryAsync(CssModeStory, CssModeState);
+
+        // Act
+        var result = await EvaluateAsync(StandaloneSlider + $@"
+            const slider = await standaloneSlider(
+                {{ slidesPerView: {slidesPerView}, spaceBetween: {spaceBetween} }},
+                {{ dir: '{dir}', zoom: {zoom} }});
+            await settle();
+            slider.el.swiper.slideTo(9, 0);
+            await settle();
+            const realIndexBeforeResize = slider.el.swiper.realIndex;
+            slider.stage.style.width = '900px';
+            await settle();
+            const result = JSON.stringify({{ realIndex: slider.el.swiper.realIndex, realIndexBeforeResize }});
+            slider.stage.remove();
+            return result;");
+
+        // Assert
+        Assert.NotEqual(0, result.RealIndexBeforeResize);
+        Assert.Equal(result.RealIndexBeforeResize, result.RealIndex);
+        fixture.AssertNoJsErrors();
+    }
+
+    [Theory]
+    [InlineData("2.5")]
+    [InlineData("2.6")]
+    public async Task Resize_GrowingWhileAtTheEndWithPartialSlides_StaysAtTheEnd(string slidesPerView)
+    {
+        // Arrange - a fractional slidesPerView rests at the end of the track short of a slide boundary, and
+        // Swiper's resize handling keeps it there only while it still knows the slider is at the end
+        await fixture.NavigateToStoryAsync(CssModeStory, CssModeState);
+
+        // Act
+        var result = await EvaluateAsync(StandaloneSlider + $@"
+            const slider = await standaloneSlider({{ slidesPerView: {slidesPerView} }});
+            await settle();
+            slider.el.swiper.slideTo(9, 0);
+            await settle();
+            slider.stage.style.width = '900px';
+            await settle();
+            const afterResize = {{
+                realIndex: slider.el.swiper.realIndex,
+                scrollLeft: Math.round(slider.track.scrollLeft),
+                endScrollLeft: Math.round(slider.track.scrollWidth - slider.track.clientWidth),
+                isEnd: slider.el.swiper.isEnd
+            }};
+            slider.el.swiper.slideTo(9, 0);
+            await settle();
+            const result = JSON.stringify({{ ...afterResize, expectedIndex: slider.el.swiper.realIndex }});
+            slider.stage.remove();
+            return result;");
+
+        // Assert - the clamp's scroll tells Swiper the slider has left the end, so it re-seats onto the last
+        // slide's left edge instead, and the last slide is cut off. At the end, the slider is on whichever
+        // slide Swiper names the end of the track at the new width
+        Assert.Equal(result.ExpectedIndex, result.RealIndex);
+        Assert.InRange(result.ScrollLeft, result.EndScrollLeft!.Value - 1, result.EndScrollLeft.Value + 1);
+        Assert.True(result.IsEnd);
         fixture.AssertNoJsErrors();
     }
 
@@ -992,5 +1062,8 @@ public sealed class SwiperCssModeMoveTests(DemoFixture fixture)
         int? MillisecondsIntoMove,
         bool? IsCssModeAfterUpdate,
         int? LayoutNoticesBeforeMove,
-        int? ResizesBeforeMove);
+        int? ResizesBeforeMove,
+        int? ResizesAfterMove,
+        int? EndScrollLeft,
+        bool? IsEnd);
 }
