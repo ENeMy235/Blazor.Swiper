@@ -16,6 +16,7 @@ import {
     isSwiperTakingOver,
     snapTypeToHandBack,
     resizeDriftCorrection,
+    isClampDrift,
     isInitPhaseEvent,
     isHighFrequencyEvent,
     shouldSendThrottledEvent,
@@ -321,6 +322,26 @@ test("ResizeDriftCorrection_WithoutCssMode_DoesNothing", () => {
     // A transformed track has no scroll position for a layout change to move.
     assert.equal(resizeDriftCorrection({ cssMode: false, slidesPerView: "auto" }), null);
     assert.equal(resizeDriftCorrection({ slidesPerView: 1 }), null);
+});
+
+test("IsClampDrift_PulledBackOntoTheEndOfTheTrack_IsDrift", () => {
+    assert.equal(isClampDrift(9, 8, true), true);
+    assert.equal(isClampDrift(2, 1, true), true);
+});
+
+test("IsClampDrift_MovedForwardSinceTheLayoutChanged_IsAMove", () => {
+    // A clamp only ever pulls the scroller back, so anything further on was asked for.
+    assert.equal(isClampDrift(0, 5, false), false);
+    assert.equal(isClampDrift(0, 9, true), false);
+});
+
+test("IsClampDrift_MovedBackAwayFromTheEnd_IsAMove", () => {
+    // A clamp leaves the scroller at the end of the track, so a slide back from there was asked for.
+    assert.equal(isClampDrift(9, 2, false), false);
+});
+
+test("IsClampDrift_NoLayoutChangeHeard_IsNoDrift", () => {
+    assert.equal(isClampDrift(null, 3, true), false);
 });
 
 test("ChangedOptions_MemberThatMoved_IsTheOnlyOneReported", () => {

@@ -343,6 +343,20 @@ export function resizeDriftCorrection(params) {
     return params.resizeObserver === false ? null : "restoreIndex";
 }
 
+/**
+ * Whether a slider whose index was held when its layout changed is now where a clamp would have left
+ * it: back from that index, and at the end of its track - the "restoreIndex" case of
+ * `resizeDriftCorrection`.
+ *
+ * Swiper handles the layout change a frame after its ResizeObserver hears of it, so a move can land in
+ * between - an instant one, or a swipe. That move is the slider's state, and restoring the held index
+ * would undo it. A clamp only ever pulls the scroller back onto the end of the track, so anything else
+ * was asked for.
+ */
+export function isClampDrift(heldIndex, activeIndex, isAtTrackEnd) {
+    return heldIndex !== null && activeIndex < heldIndex && isAtTrackEnd;
+}
+
 // --- events -------------------------------------------------------------------------------------
 
 /**

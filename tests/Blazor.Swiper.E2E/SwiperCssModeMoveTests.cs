@@ -498,6 +498,37 @@ public sealed class SwiperCssModeMoveTests(DemoFixture fixture)
         fixture.AssertNoJsErrors();
     }
 
+    [Theory]
+    [InlineData(0, 5, "SlideTo")]
+    [InlineData(0, 5, "Swiper")]
+    [InlineData(9, 2, "SlideTo")]
+    public async Task SlideTo_InstantMoveInTheFrameAfterAResize_EndsOnTheRequestedSlide(int fromSlide, int toSlide, string route)
+    {
+        // Arrange - slides Swiper sizes itself. A width transition lays the slider out again every frame, so
+        // an instant move - SlideTo, or a pagination bullet at Speed = 0 - lands in this window all the time
+        await fixture.NavigateToStoryAsync(CssModeStory, CssModeState);
+        var move = route == "SlideTo" ? $"interop.slideTo(slider.el, {toSlide}, 0);" : $"slider.el.swiper.slideTo({toSlide}, 0);";
+
+        // Act - Swiper handles a layout change a frame after its ResizeObserver hears of it, and the move
+        // comes in between
+        var result = await EvaluateAsync(StandaloneSlider + $@"
+            const slider = await standaloneSlider({{}});
+            await settle();
+            slider.el.swiper.slideTo({fromSlide}, 0);
+            await settle();
+            slider.stage.style.width = '600px';
+            await frame();
+            await wait(0);
+            {move}
+            await settle();
+            return finishSlider(slider, {toSlide});");
+
+        // Assert - the move is the slider's state now, not the index it held when the layout changed
+        Assert.Equal(result.ExpectedIndex, result.RealIndex);
+        Assert.Equal(result.ExpectedScrollLeft, result.ScrollLeft);
+        fixture.AssertNoJsErrors();
+    }
+
     [Fact]
     public async Task UpdateOptions_CssModeSwitchedOnAfterInit_ResizesWithoutErrors()
     {

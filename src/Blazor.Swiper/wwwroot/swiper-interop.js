@@ -24,6 +24,7 @@ import {
     isSwiperTakingOver,
     snapTypeToHandBack,
     resizeDriftCorrection,
+    isClampDrift,
     isInitPhaseEvent,
     isInitOnlyParam,
     isHighFrequencyEvent,
@@ -736,8 +737,9 @@ function attachIntendedIndexGuard(element, swiper) {
 // reading the position again there hands onResize the right slide. For slides Swiper sizes itself only a
 // clamp has moved the scroller, so the position means nothing: the index Swiper held when the layout changed
 // is restored instead, taken by an observer of its own that sees the change before Swiper's
-// ResizeObserver-driven resize does. A host that forces layout in the same task as the change lets the
-// clamp's scroll reach Swiper before that observer, which is no worse than without it.
+// ResizeObserver-driven resize does - unless a move landed in between (isClampDrift). A host that forces
+// layout in the same task as the change lets the clamp's scroll reach Swiper before that observer, which is
+// no worse than without it.
 function attachResizeDriftCorrection(element, swiper) {
     // Swiper wires its scroll handling only for a slider that was in cssMode at init.
     if (typeof swiper.onScroll !== "function") {
@@ -774,15 +776,26 @@ function attachResizeDriftCorrection(element, swiper) {
                 swiper.updateSlides();
                 swiper.onScroll();
                 break;
-            case "restoreIndex":
+            case "restoreIndex": {
                 // A move in flight follows its own slide through the resize.
                 const isMoveInFlight = !!hostState(element).endScrollMove;
-                if (heldIndex !== null && heldIndex !== swiper.activeIndex && !isMoveInFlight) {
+                if (!isMoveInFlight && isClampDrift(heldIndex, swiper.activeIndex, isAtTrackEnd(swiper))) {
                     swiper.updateActiveIndex(heldIndex);
                 }
                 break;
+            }
         }
     });
+}
+
+function isAtTrackEnd(swiper) {
+    const wrapper = swiper.wrapperEl;
+    const position = Math.abs(swiper.isHorizontal() ? wrapper.scrollLeft : wrapper.scrollTop);
+    const end = swiper.isHorizontal()
+        ? wrapper.scrollWidth - wrapper.clientWidth
+        : wrapper.scrollHeight - wrapper.clientHeight;
+    // Subpixel layout leaves a scroller resting at the end a fraction short of it.
+    return position >= end - 1;
 }
 
 // --- live autoHeight ---------------------------------------------------------------------------------
