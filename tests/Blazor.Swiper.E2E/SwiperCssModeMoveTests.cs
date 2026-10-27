@@ -499,33 +499,89 @@ public sealed class SwiperCssModeMoveTests(DemoFixture fixture)
     }
 
     [Theory]
-    [InlineData(0, 5, "SlideTo")]
-    [InlineData(0, 5, "Swiper")]
-    [InlineData(9, 2, "SlideTo")]
-    public async Task SlideTo_InstantMoveInTheFrameAfterAResize_EndsOnTheRequestedSlide(int fromSlide, int toSlide, string route)
+    [InlineData(0, 5, 600, "SlideTo")]
+    [InlineData(0, 5, 600, "Swiper")]
+    [InlineData(9, 2, 600, "SlideTo")]
+    [InlineData(9, 8, 900, "SlideTo")]
+    [InlineData(9, 8, 900, "Swiper")]
+    [InlineData(9, 8, 900, "Bullet")]
+    [InlineData(0, 5, 600, "Anchor")]
+    [InlineData(9, 8, 900, "Anchor")]
+    public async Task SlideTo_InstantMoveInTheFrameAfterAResize_EndsOnTheRequestedSlide(int fromSlide, int toSlide, int resizedWidth, string route)
     {
         // Arrange - slides Swiper sizes itself. A width transition lays the slider out again every frame, so
-        // an instant move - SlideTo, or a pagination bullet at Speed = 0 - lands in this window all the time
+        // an instant move - SlideTo, a pagination bullet at Speed = 0, an anchor - lands in this window all the
+        // time. Growing to 900px from the last slide, the step back to slide 8 lands on the same clamped end of
+        // the track a drift would
         await fixture.NavigateToStoryAsync(CssModeStory, CssModeState);
-        var move = route == "SlideTo" ? $"interop.slideTo(slider.el, {toSlide}, 0);" : $"slider.el.swiper.slideTo({toSlide}, 0);";
+        var move = route switch
+        {
+            "SlideTo" => $"interop.slideTo(slider.el, {toSlide}, 0);",
+            "Swiper" => $"slider.el.swiper.slideTo({toSlide}, 0);",
+            "Anchor" => $"interop.updateAndAnchor(slider.el, {toSlide});",
+            _ => $"slider.el.shadowRoot.querySelectorAll('.swiper-pagination-bullet')[{toSlide}].click();"
+        };
 
         // Act - Swiper handles a layout change a frame after its ResizeObserver hears of it, and the move
-        // comes in between
+        // comes in between. The width changes in a task: changed from an animation frame callback, it is laid
+        // out in that same frame, and Swiper's resize then runs before the move
         var result = await EvaluateAsync(StandaloneSlider + $@"
-            const slider = await standaloneSlider({{}});
+            const slider = await standaloneSlider({{ speed: 0, pagination: {{ clickable: true }} }});
             await settle();
             slider.el.swiper.slideTo({fromSlide}, 0);
             await settle();
-            slider.stage.style.width = '600px';
+            let layoutNotices = 0;
+            let resizes = 0;
+            new ResizeObserver(() => layoutNotices++).observe(slider.el.swiper.el);
+            await wait(100);
+            layoutNotices = 0;
+            slider.el.addEventListener('swiperresize', () => resizes++);
+            slider.stage.style.width = '{resizedWidth}px';
             await frame();
             await wait(0);
+            const layoutNoticesBeforeMove = layoutNotices;
+            const resizesBeforeMove = resizes;
             {move}
             await settle();
-            return finishSlider(slider, {toSlide});");
+            return finishSlider(slider, {toSlide}, {{ layoutNoticesBeforeMove, resizesBeforeMove }});");
 
-        // Assert - the move is the slider's state now, not the index it held when the layout changed
+        // Assert - the move landed in the window, and it is the slider's state now, not the index the slider
+        // held when the layout changed
+        Assert.True(result.LayoutNoticesBeforeMove > 0);
+        Assert.Equal(0, result.ResizesBeforeMove);
         Assert.Equal(result.ExpectedIndex, result.RealIndex);
         Assert.Equal(result.ExpectedScrollLeft, result.ScrollLeft);
+        fixture.AssertNoJsErrors();
+    }
+
+    [Theory]
+    [InlineData(1, 420, 900, false, 5)]
+    [InlineData(3, 900, 420, false, 5)]
+    [InlineData(3, 420, 900, true, 9)]
+    public async Task Resize_CenteredSlidesAtRest_StaysOnTheSlide(int slidesPerView, int fromWidth, int toWidth, bool loop, int slide)
+    {
+        // Arrange - slides Swiper sizes itself, centered. These snap to their centre, so the browser re-snaps the
+        // scroller onto the slide's centre in the new layout rather than clamping it
+        await fixture.NavigateToStoryAsync(CssModeStory, CssModeState);
+
+        // Act
+        var result = await EvaluateAsync(StandaloneSlider + $@"
+            const slider = await standaloneSlider(
+                {{ centeredSlides: true, slidesPerView: {slidesPerView}, loop: {(loop ? "true" : "false")} }},
+                {{ stageWidth: {fromWidth} }});
+            await settle();
+            slider.el.swiper.slideToLoop({slide}, 0);
+            await settle();
+            const realIndexBeforeResize = slider.el.swiper.realIndex;
+            slider.stage.style.width = '{toWidth}px';
+            await settle();
+            const result = JSON.stringify({{ realIndex: slider.el.swiper.realIndex, realIndexBeforeResize, expectedIndex: {slide} }});
+            slider.stage.remove();
+            return result;");
+
+        // Assert - Swiper reads that re-snap against the slide grid from before the resize, just as it does a clamp
+        Assert.Equal(result.ExpectedIndex, result.RealIndexBeforeResize);
+        Assert.Equal(result.ExpectedIndex, result.RealIndex);
         fixture.AssertNoJsErrors();
     }
 
@@ -934,5 +990,7 @@ public sealed class SwiperCssModeMoveTests(DemoFixture fixture)
         int? SizeAfterResize,
         string? ComputedSnapTypeAtRest,
         int? MillisecondsIntoMove,
-        bool? IsCssModeAfterUpdate);
+        bool? IsCssModeAfterUpdate,
+        int? LayoutNoticesBeforeMove,
+        int? ResizesBeforeMove);
 }

@@ -323,10 +323,11 @@ export function snapTypeToHandBack(found) {
  *
  * - "remeasure": slides sized by CSS take their new size at once, and the browser re-snaps the
  *   scroller onto the same slide at its new offset. Measured again, that position names the slide.
- * - "restoreIndex": slides Swiper sizes itself keep their size until it measures them, so only a
- *   clamp moves the scroller - the slider grew past the end of its track - and that position means
- *   nothing. The index Swiper held when the layout changed does, and an observer of its own sees that
- *   change before Swiper's ResizeObserver-driven resize, which is why it needs that observer.
+ * - "restoreIndex": slides Swiper sizes itself keep their size until it measures them, so what moves
+ *   the scroller is a clamp - the slider grew past the end of its track - or, for centered slides, a
+ *   re-snap onto a slide's centre in the new layout, and neither position is worth measuring again.
+ *   The index Swiper held when the layout changed is, and an observer of its own sees that change
+ *   before Swiper's ResizeObserver-driven resize, which is why it needs that observer.
  *
  * Free mode does not snap, and with `updateOnWindowResize` off Swiper does not re-seat on a resize.
  */
@@ -344,17 +345,15 @@ export function resizeDriftCorrection(params) {
 }
 
 /**
- * Whether a slider whose index was held when its layout changed is now where a clamp would have left
- * it: back from that index, and at the end of its track - the "restoreIndex" case of
- * `resizeDriftCorrection`.
- *
- * Swiper handles the layout change a frame after its ResizeObserver hears of it, so a move can land in
- * between - an instant one, or a swipe. That move is the slider's state, and restoring the held index
- * would undo it. A clamp only ever pulls the scroller back onto the end of the track, so anything else
- * was asked for.
+ * Whether to put back the index a slider held when its layout changed - the "restoreIndex" case of
+ * `resizeDriftCorrection`. `heldIndex` is null when no layout change was heard, and also when a
+ * navigation has happened since: Swiper handles the change a frame after its ResizeObserver hears of
+ * it, a move landing in between is the slider's state from then on, and where the scroller sits cannot
+ * tell such a move from a drift - a step back from the last slide lands on the very end of the track a
+ * clamp leaves it at.
  */
-export function isClampDrift(heldIndex, activeIndex, isAtTrackEnd) {
-    return heldIndex !== null && activeIndex < heldIndex && isAtTrackEnd;
+export function shouldRestoreIndex(heldIndex, activeIndex, isMoveInFlight) {
+    return heldIndex !== null && heldIndex !== activeIndex && !isMoveInFlight;
 }
 
 // --- events -------------------------------------------------------------------------------------

@@ -173,10 +173,13 @@ Swiper reads either against its old slide grid, then re-seats onto the slide it 
 and `resizeDriftCorrection` picks how. https://github.com/nolimits4web/swiper/pull/8250 fixes only the
 CSS-sized half upstream, so a re-vendored bundle that carries it retires only the `"remeasure"` half;
 `Resize_CssSizedSlidesAtRest_StaysOnTheSlide` and `Resize_GrowingWhileOnTheLastSlide_StaysOnIt` are the
-proof. The intent guard used to hide all this only because the intent never cleared in cssMode. Swiper
-handles the resize a frame after its ResizeObserver fires, and a move can land in that frame - every frame
-of a width transition is one - so the `"restoreIndex"` half acts only where a clamp leaves the slider
-(`isClampDrift`); `SlideTo_InstantMoveInTheFrameAfterAResize_EndsOnTheRequestedSlide` holds it to that.
+proof. The intent guard used to hide all this only because the intent never cleared in cssMode. Centered
+slides Swiper sizes itself are re-snapped rather than clamped, and take the `"restoreIndex"` half too
+(`Resize_CenteredSlidesAtRest_StaysOnTheSlide`). Swiper handles the resize a frame after its
+ResizeObserver fires, and a move can land in that frame - every frame of a width transition is one. Where
+the scroller sits cannot tell that move from a drift (a step back from the last slide lands on the clamped
+end too), so whatever takes the slider over stands the held index down (`abandonScrollMove`);
+`SlideTo_InstantMoveInTheFrameAfterAResize_EndsOnTheRequestedSlide` holds it to that.
 
 **The element can be gone before `initialize` runs.** A conditionally rendered pager can collapse on
 the very tap that scheduled it, and `await customElements.whenDefined(...)` widens the window

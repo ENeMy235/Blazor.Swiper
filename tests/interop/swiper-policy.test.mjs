@@ -16,7 +16,7 @@ import {
     isSwiperTakingOver,
     snapTypeToHandBack,
     resizeDriftCorrection,
-    isClampDrift,
+    shouldRestoreIndex,
     isInitPhaseEvent,
     isHighFrequencyEvent,
     shouldSendThrottledEvent,
@@ -324,24 +324,29 @@ test("ResizeDriftCorrection_WithoutCssMode_DoesNothing", () => {
     assert.equal(resizeDriftCorrection({ slidesPerView: 1 }), null);
 });
 
-test("IsClampDrift_PulledBackOntoTheEndOfTheTrack_IsDrift", () => {
-    assert.equal(isClampDrift(9, 8, true), true);
-    assert.equal(isClampDrift(2, 1, true), true);
+test("ShouldRestoreIndex_SliderOffTheIndexItHeld_IsRestored", () => {
+    assert.equal(shouldRestoreIndex(9, 8, false), true);
+    assert.equal(shouldRestoreIndex(5, 4, false), true);
+    assert.equal(shouldRestoreIndex(5, 6, false), true);
 });
 
-test("IsClampDrift_MovedForwardSinceTheLayoutChanged_IsAMove", () => {
-    // A clamp only ever pulls the scroller back, so anything further on was asked for.
-    assert.equal(isClampDrift(0, 5, false), false);
-    assert.equal(isClampDrift(0, 9, true), false);
+test("ShouldRestoreIndex_FirstSlideHeld_IsRestored", () => {
+    // Slide 0 is falsy.
+    assert.equal(shouldRestoreIndex(0, 1, false), true);
 });
 
-test("IsClampDrift_MovedBackAwayFromTheEnd_IsAMove", () => {
-    // A clamp leaves the scroller at the end of the track, so a slide back from there was asked for.
-    assert.equal(isClampDrift(9, 2, false), false);
+test("ShouldRestoreIndex_SliderStillOnTheIndexItHeld_IsLeftAlone", () => {
+    assert.equal(shouldRestoreIndex(5, 5, false), false);
 });
 
-test("IsClampDrift_NoLayoutChangeHeard_IsNoDrift", () => {
-    assert.equal(isClampDrift(null, 3, true), false);
+test("ShouldRestoreIndex_NothingHeld_IsLeftAlone", () => {
+    // No layout change heard, or a navigation since has made the held index stale.
+    assert.equal(shouldRestoreIndex(null, 3, false), false);
+});
+
+test("ShouldRestoreIndex_MoveInFlight_IsLeftAlone", () => {
+    // The move follows its own slide through the resize.
+    assert.equal(shouldRestoreIndex(9, 8, true), false);
 });
 
 test("ChangedOptions_MemberThatMoved_IsTheOnlyOneReported", () => {
