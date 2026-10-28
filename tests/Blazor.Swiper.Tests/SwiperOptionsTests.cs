@@ -143,6 +143,25 @@ public sealed class SwiperOptionsTests
             .ShouldBeTrue();
     }
 
+    [Theory]
+    [InlineData(SwiperFadeEffectMode.Default, "default")]
+    [InlineData(SwiperFadeEffectMode.CrossFade, "cross-fade")]
+    [InlineData(SwiperFadeEffectMode.OutIn, "out-in")]
+    public void Serialize_FadeEffectMode_BecomesSwipersKebabCaseString(SwiperFadeEffectMode mode, string expected)
+    {
+        Swiper.SerializeOptions(new SwiperOptions { FadeEffect = new() { Mode = mode } })
+            .Contains($"\"fadeEffect\":{{\"mode\":\"{expected}\"")
+            .ShouldBeTrue();
+    }
+
+    [Fact]
+    public void Serialize_LazyPreloadOff_IsWrittenAsFalse()
+    {
+        Swiper.SerializeOptions(new SwiperOptions { LazyPreload = false })
+            .Contains("\"lazyPreload\":false")
+            .ShouldBeTrue();
+    }
+
     [Fact]
     public void Serialize_Breakpoints_KeepTheirKeysExactly()
     {

@@ -125,10 +125,11 @@ reads the mere presence of a module's options as "module wanted", which is what 
 means.
 
 **`injectStyles` lands in `adoptedStyleSheets`, not in a `<style>`.** The element takes the
-constructable-stylesheet path wherever `CSSStyleSheet` exists, which is everywhere that matters. It
-is also declared as a class field on the element, which shadows the prototype accessor the other
-parameters use - so assigning it writes the field the renderer actually reads, and never routes
-through the element's post-init update path. It is init-only either way.
+constructable-stylesheet path wherever `CSSStyleSheet` exists, which is everywhere that matters. Up
+to Swiper 14.2 it was a class field on the element, shadowing the prototype accessor the other
+parameters use; since 14.3.0 it is one of those accessors, and the renderer reads it through the
+getter. Either way the styles are rendered once, at init, so a later assignment changes nothing - it
+is init-only.
 
 **`realIndex`, never `activeIndex`.** In loop mode Swiper duplicates slides, so `activeIndex` counts
 positions the host's collection does not have. Everything crossing the interop boundary is the

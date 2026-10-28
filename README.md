@@ -163,6 +163,7 @@ It's a `record`, so a change is a `with` expression, and changing it pushes the 
 | `InjectStyles` | `string[]?` | `null` - see [below](#reaching-the-shadow-dom) |
 | `InjectStylesUrls` | `string[]?` | `null` |
 | `ContainerModifierClass`, `SlideClass`, `SlideActiveClass`, `SlideVisibleClass`, `SlideFullyVisibleClass`, `SlideBlankClass`, `SlideNextClass`, `SlidePrevClass`, `WrapperClass`, `LazyPreloaderClass` | `string?` | Swiper's own class names |
+| `LazyPreload` | `bool?` | `true` - turn off when something else handles `loading="lazy"` images |
 | `LazyPreloadPrevNext` | `int?` | `0` |
 
 ### Modules

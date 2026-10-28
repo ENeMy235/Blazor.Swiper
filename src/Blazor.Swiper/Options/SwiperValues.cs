@@ -90,6 +90,20 @@ public enum SwiperControlBy
     Container
 }
 
+/// <summary>Values for <see cref="SwiperFadeEffectOptions.Mode"/>.</summary>
+[JsonConverter(typeof(SwiperFadeEffectModeConverter))]
+public enum SwiperFadeEffectMode
+{
+    /// <summary>Only the active slide fades out, over the incoming one, which stays fully visible.</summary>
+    Default,
+
+    /// <summary>Both slides fade at once.</summary>
+    CrossFade,
+
+    /// <summary>The active slide fades out completely before the incoming one starts to fade in.</summary>
+    OutIn
+}
+
 /// <summary>Values for <see cref="SwiperOptions.EdgeSwipeDetection"/>.</summary>
 [JsonConverter(typeof(SwiperEdgeSwipeDetectionConverter))]
 public enum SwiperEdgeSwipeDetection
@@ -315,5 +329,29 @@ internal sealed class SwiperEdgeSwipeDetectionConverter : JsonConverter<SwiperEd
         }
 
         writer.WriteBooleanValue(value == SwiperEdgeSwipeDetection.Enabled);
+    }
+}
+
+/// <summary>Writes <see cref="SwiperFadeEffectMode"/> as Swiper's kebab-case strings, such as <c>'cross-fade'</c>.</summary>
+internal sealed class SwiperFadeEffectModeConverter : JsonConverter<SwiperFadeEffectMode>
+{
+    public override SwiperFadeEffectMode Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        return reader.GetString() switch
+        {
+            "cross-fade" => SwiperFadeEffectMode.CrossFade,
+            "out-in" => SwiperFadeEffectMode.OutIn,
+            _ => SwiperFadeEffectMode.Default
+        };
+    }
+
+    public override void Write(Utf8JsonWriter writer, SwiperFadeEffectMode value, JsonSerializerOptions options)
+    {
+        writer.WriteStringValue(value switch
+        {
+            SwiperFadeEffectMode.CrossFade => "cross-fade",
+            SwiperFadeEffectMode.OutIn => "out-in",
+            _ => "default"
+        });
     }
 }
