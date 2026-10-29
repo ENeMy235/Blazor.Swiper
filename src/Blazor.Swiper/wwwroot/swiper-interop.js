@@ -784,10 +784,16 @@ function attachResizeDriftCorrection(element, swiper) {
     layoutObserver.observe(swiper.el);
 
     listen(element, "resize", () => {
+        // A listener left behind by an instance replaced without disposing must not use up what the
+        // replacement holds.
+        if (!isLiveSwiper(element, swiper)) {
+            return;
+        }
+
         const held = state.heldAtLayout;
         state.heldAtLayout = null;
         // onResize skips a slider that is not laid out, and measuring one would only read zeroes.
-        if (!isLiveSwiper(element, swiper) || swiper.el.offsetWidth === 0) {
+        if (swiper.el.offsetWidth === 0) {
             return;
         }
 
@@ -1064,7 +1070,11 @@ export function detachEvents(element) {
 }
 
 export function attachEvents(element) {
-    liveSwiper(element)?.attachEvents();
+    const swiper = liveSwiper(element);
+    // Swiper binds a new set of listeners on every attach, so one made while they are attached would leave the
+    // old set behind for good.
+    swiper?.detachEvents();
+    swiper?.attachEvents();
 }
 
 // --- module controllers -------------------------------------------------------------------------------

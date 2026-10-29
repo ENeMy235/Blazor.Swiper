@@ -655,6 +655,65 @@ public sealed class SwiperCssModeMoveTests(DemoFixture fixture)
         fixture.AssertNoJsErrors();
     }
 
+    [Theory]
+    [InlineData("column", 420, 900)]
+    [InlineData("column", 900, 420)]
+    [InlineData("row", 420, 900)]
+    [InlineData("row", 900, 420)]
+    public async Task Resize_GridSliderAtTheEnd_StaysOnTheSlide(string fill, int fromWidth, int toWidth)
+    {
+        // Arrange - slides Swiper sizes itself, in two rows. A grid counts its index in columns, not slides
+        await fixture.NavigateToStoryAsync(CssModeStory, CssModeState);
+
+        // Act
+        var result = await EvaluateAsync(StandaloneSlider + $@"
+            const slider = await standaloneSlider(
+                {{ slidesPerView: 2, grid: {{ rows: 2, fill: '{fill}' }} }},
+                {{ count: 12, stageWidth: {fromWidth} }});
+            await settle();
+            for (let step = 0; step < 12 && !slider.el.swiper.isEnd; step++) {{
+                slider.el.swiper.slideNext(0);
+            }}
+            await settle();
+            const realIndexBeforeResize = slider.el.swiper.realIndex;
+            slider.stage.style.width = '{toWidth}px';
+            await settle();
+            const result = JSON.stringify({{ realIndex: slider.el.swiper.realIndex, realIndexBeforeResize }});
+            slider.stage.remove();
+            return result;");
+
+        // Assert
+        Assert.Equal(result.RealIndexBeforeResize, result.RealIndex);
+        fixture.AssertNoJsErrors();
+    }
+
+    [Fact]
+    public async Task Initialize_AgainAfterTheElementWasMoved_KeepsTheLastSlideAcrossAResize()
+    {
+        // Arrange - the element leaves the DOM and comes back, which destroys its Swiper, and the host
+        // initializes it again without disposing first
+        await fixture.NavigateToStoryAsync(CssModeStory, CssModeState);
+
+        // Act
+        var result = await EvaluateAsync(StandaloneSlider + @"
+            const slider = await standaloneSlider({});
+            await settle();
+            slider.el.remove();
+            slider.stage.appendChild(slider.el);
+            await interop.initialize(slider.el, { cssMode: true, spaceBetween: 16 }, null, [], 0, false);
+            await settle();
+            slider.el.swiper.slideTo(9, 0);
+            await settle();
+            slider.stage.style.width = '900px';
+            await settle();
+            return finishSlider({ ...slider, track: slider.el.swiper.wrapperEl }, 9);");
+
+        // Assert - the first instance's listener must not use up what the second one held
+        Assert.Equal(result.ExpectedIndex, result.RealIndex);
+        Assert.Equal(result.ExpectedScrollLeft, result.ScrollLeft);
+        fixture.AssertNoJsErrors();
+    }
+
     [Fact]
     public async Task UpdateOptions_CssModeSwitchedOnAfterInit_ResizesWithoutErrors()
     {
