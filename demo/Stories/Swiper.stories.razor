@@ -512,10 +512,9 @@
     <Story Name="User vs code-driven changes">
         <Description>
             <code>OnSlideChange</code> reports every change, whoever caused it. <code>OnUserSlideChange</code>
-            reports only the ones the user dragged. By index alone the two are indistinguishable - and in
-            <code>Loop</code> mode a programmatic move is followed by an echo announcing the slide it left -
-            so a host that reacts to a change by updating its own state needs the narrower callback to avoid
-            feeding its own move back into itself.
+            reports only the ones the user dragged. By index alone the two are indistinguishable, so a host
+            that reacts to a change by updating its own state needs the narrower callback to avoid feeding its
+            own move back into itself.
         </Description>
         <Template>
             <div style="width: 420px;">

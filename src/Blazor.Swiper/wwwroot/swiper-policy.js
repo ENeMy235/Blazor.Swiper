@@ -109,6 +109,7 @@ const INIT_ONLY_PARAMS = new Set([
     "resizeObserver",
     "updateOnWindowResize",
     "passiveListeners",
+    "lazyPreload",
     "touchEventsTarget",
     "simulateTouch",
     "nested",

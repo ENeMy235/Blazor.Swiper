@@ -345,7 +345,7 @@ The first event of a burst is always delivered, so a throttled `OnProgress` stil
 
 ### Prefer `OnUserSlideChange` when you react by changing state
 
-`OnSlideChange` reports every change - including the one your own `SlideTo` call just caused, and the echo `Loop` mode emits for the slide it left once a programmatic move finishes. A host that reacts to a change by updating its own state will feed its own move straight back into itself, and by index alone the two are indistinguishable.
+`OnSlideChange` reports every change - including the one your own `SlideTo` call just caused. A host that reacts to a change by updating its own state will feed its own move straight back into itself, and by index alone the two are indistinguishable.
 
 `OnUserSlideChange` reports only the changes the user dragged. A plain tap raises neither, so a button inside a slide is never mistaken for a swipe. The slider keeps moving after the pointer is released, so treat the interaction as finished on `OnTransitionEnd` rather than on release.
 

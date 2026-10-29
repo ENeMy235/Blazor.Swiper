@@ -93,9 +93,8 @@ public partial class Swiper
 
     /// <summary>
     /// Raised the first time a drag actually moves the slider. Use it to tell a user-driven slide change
-    /// apart from a programmatic one - by index alone they are identical, and in <see cref="SwiperOptions.Loop"/>
-    /// mode a programmatic move is followed by an echo announcing the slide that was left. A plain tap does
-    /// not raise this, so a button inside a slide cannot be mistaken for a swipe. The slider keeps moving
+    /// apart from a programmatic one - by index alone they are identical. A plain tap does not raise this,
+    /// so a button inside a slide cannot be mistaken for a swipe. The slider keeps moving
     /// afterwards, so treat the interaction as over on <see cref="OnTransitionEnd"/>, not on pointer release.
     /// Not raised in <see cref="SwiperOptions.CssMode"/>, where the browser owns the scroll.
     /// </summary>

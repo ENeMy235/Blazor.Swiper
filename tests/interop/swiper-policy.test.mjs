@@ -413,6 +413,7 @@ test("IsInitOnlyParam_ParametersSwiperOnlyReadsWhileInitializing_AreRecognised",
     assert.equal(isInitOnlyParam("cssMode"), true);
     assert.equal(isInitOnlyParam("initialSlide"), true);
     assert.equal(isInitOnlyParam("keyboard"), true);
+    assert.equal(isInitOnlyParam("lazyPreload"), true);
 });
 
 test("IsInitOnlyParam_ParametersSwiperReAppliesOnUpdate_AreNot", () => {

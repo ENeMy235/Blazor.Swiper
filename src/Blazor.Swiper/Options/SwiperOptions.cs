@@ -377,7 +377,8 @@ public sealed record SwiperOptions
     /// <summary>
     /// Let Swiper handle <c>loading="lazy"</c> images: remove their preloader on load, relayout
     /// for them, and preload the neighbours <see cref="LazyPreloadPrevNext"/> asks for. Turn it off
-    /// when the images' loading is handled elsewhere. Null = Swiper's default (true).
+    /// when the images' loading is handled elsewhere. Swiper reads it only while it initializes, so changing
+    /// it on a running slider has no effect. Null = Swiper's default (true).
     /// </summary>
     public bool? LazyPreload { get; set; }
 

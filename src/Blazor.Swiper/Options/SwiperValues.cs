@@ -94,7 +94,10 @@ public enum SwiperControlBy
 [JsonConverter(typeof(SwiperFadeEffectModeConverter))]
 public enum SwiperFadeEffectMode
 {
-    /// <summary>Only the active slide fades out, over the incoming one, which stays fully visible.</summary>
+    /// <summary>
+    /// Only the slide stacked on top fades - the incoming one in when moving forward, the active one out when
+    /// moving back - while the other stays fully opaque beneath it.
+    /// </summary>
     Default,
 
     /// <summary>Both slides fade at once.</summary>

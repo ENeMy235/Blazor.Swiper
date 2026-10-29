@@ -6,7 +6,11 @@ namespace Kebechet.Blazor.Swiper;
 /// </summary>
 public sealed record SwiperFadeEffectOptions
 {
-    /// <summary>How the outgoing and incoming slides fade. Null = Swiper's default (<see cref="SwiperFadeEffectMode.Default"/>).</summary>
+    /// <summary>
+    /// How the outgoing and incoming slides fade. Null = Swiper's default (<see cref="SwiperFadeEffectMode.Default"/>).
+    /// <see cref="CrossFade"/> = true still cross-fades while this is <see cref="SwiperFadeEffectMode.Default"/>;
+    /// any other mode wins over it.
+    /// </summary>
     public SwiperFadeEffectMode? Mode { get; set; }
 
     /// <summary>

@@ -142,8 +142,9 @@ exists to correct and lets the re-anchor stand. `shouldDisarmIntent` owns that r
 
 **`sliderFirstMove`, not `touchstart`.** touchstart also fires for a plain tap on a button inside a
 slide - usually the very thing that triggered the programmatic move. `sliderFirstMove` is the only
-signal separating a swipe from a code-driven move, because loop mode re-announces the slide it left
-after a programmatic move and that echo is identical by index.
+signal separating a swipe from a code-driven move, which an index alone cannot tell apart - up to
+Swiper 14.1, loop mode even re-announced the slide it left after a programmatic move, until 14.2.0
+stopped `loopFix`'s teleports raising index events.
 
 **Slide 0 is falsy.** The intent guards test `!== null` explicitly (`isIntentArmed`). A truthiness
 check silently refuses to defend the first slide, which is exactly where a reset lands.
