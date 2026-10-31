@@ -314,59 +314,6 @@ export function snapTypeToHandBack(found) {
     return found === "none" ? "" : found;
 }
 
-/**
- * How to keep a resize from leaving Swiper on another slide than the one it was on, or null when
- * there is nothing to keep (https://github.com/nolimits4web/swiper/issues/8246).
- *
- * In cssMode the scroll position is the slider's state, and a layout change moves the scroller before
- * Swiper's resize handling has measured that layout. Swiper reads the scroll against its old slide
- * grid, and then re-seats the slider onto the slide it misread.
- *
- * - "remeasure": slides sized by CSS take their new size at once, and the browser re-snaps the
- *   scroller onto the same slide at its new offset. Measured again, that position names the slide.
- * - "restoreIndex": slides Swiper sizes itself keep their size until it measures them, so what moves
- *   the scroller is a clamp - the slider grew past the end of its track - or, for centered slides, a
- *   re-snap onto a slide's centre in the new layout, and neither position is worth measuring again.
- *   The index Swiper held when the layout changed is, and an observer of its own sees that change
- *   before Swiper's ResizeObserver-driven resize, which is why it needs that observer.
- *
- * Free mode does not snap, and with `updateOnWindowResize` off Swiper does not re-seat on a resize.
- */
-export function resizeDriftCorrection(params) {
-    const isFreeMode = params.freeMode === true || params.freeMode?.enabled === true;
-    if (params.cssMode !== true || isFreeMode || params.updateOnWindowResize === false) {
-        return null;
-    }
-
-    if (params.slidesPerView === "auto") {
-        return "remeasure";
-    }
-
-    return params.resizeObserver === false ? null : "restoreIndex";
-}
-
-/**
- * Whether to put back the index a slider held when its layout changed - the "restoreIndex" case of
- * `resizeDriftCorrection`. `heldIndex` is null when no layout change was heard, and also when a
- * navigation has happened since: Swiper handles the change a frame after its ResizeObserver hears of
- * it, a move landing in between is the slider's state from then on, and where the scroller sits cannot
- * tell such a move from a drift - a step back from the last slide lands on the very end of the track a
- * clamp leaves it at.
- */
-export function shouldRestoreIndex(heldIndex, activeIndex, isMoveInFlight) {
-    return heldIndex !== null && heldIndex !== activeIndex && !isMoveInFlight;
-}
-
-/**
- * Whether to tell Swiper again that a slider at the end of its track when its layout changed still is,
- * alongside `shouldRestoreIndex`. Swiper's resize handling keeps a slider with `slidesPerView` above 1 at
- * the end only while it knows it is there, and the clamp's scroll has told it otherwise - a fractional
- * `slidesPerView` would then be re-seated onto its last slide's edge, the last slide cut off.
- */
-export function shouldRestoreEnd(wasAtEnd, isAtEnd, isMoveInFlight) {
-    return wasAtEnd && !isAtEnd && !isMoveInFlight;
-}
-
 // --- events -------------------------------------------------------------------------------------
 
 /**

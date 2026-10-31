@@ -23,9 +23,6 @@ import {
     isSwiperCorrection,
     isSwiperTakingOver,
     snapTypeToHandBack,
-    resizeDriftCorrection,
-    shouldRestoreIndex,
-    shouldRestoreEnd,
     isInitPhaseEvent,
     isInitOnlyParam,
     isHighFrequencyEvent,
@@ -50,7 +47,6 @@ function hostState(element) {
         slideSetObserver: null,
         slideResizeObserver: null,
         endScrollMove: null,
-        heldAtLayout: null,
         dotNetRef: null,
         appliedOptions: {},
         eventThrottleMs: 0,
@@ -132,7 +128,6 @@ export async function initialize(element, options, dotNetRef, subscribedEvents, 
 
     if (swiper) {
         attachIntendedIndexGuard(element, swiper);
-        attachResizeDriftCorrection(element, swiper);
 
         if (swiper.params.autoHeight) {
             attachLiveAutoHeight(element, swiper);
@@ -559,8 +554,6 @@ function scrollToSlide(element, swiper, index, speed) {
     const start = wrapper.scrollLeft;
     const plan = scrollPlan(start, slideOffset(swiper, index), speed, swiper.params.speed);
     state.endScrollMove?.();
-    // The host has sent the slider somewhere, which what it held across a layout change must not undo.
-    state.heldAtLayout = null;
     hookSwiperNavigation(element, swiper);
 
     // cssMode raises no transitionend, so nothing else ever disarms the intent slideTo() just set. A move
@@ -570,8 +563,12 @@ function scrollToSlide(element, swiper, index, speed) {
         return;
     }
 
+    // An instant move goes through Swiper rather than writing the offset. Between a layout change and Swiper
+    // handling it, Swiper leaves every scroll to its resize handling, which then re-seats the slider onto the
+    // slide it holds - and only its own slideTo updates that in the meantime
+    // (https://github.com/nolimits4web/swiper/pull/8250).
     if (plan.kind === "instant") {
-        wrapper.scrollLeft = plan.target;
+        swiper.slideTo(index, 0);
         state.intendedIndex = null;
         return;
     }
@@ -638,8 +635,7 @@ const navigationHooks = new WeakSet();
 // Swiper's arrows, pagination and keyboard never pass through this module, and none of them announces a move
 // before making it. What they do share - with slideNext, slidePrev and every other way Swiper navigates - is
 // that they end in the instance's own slideTo, so that is where the wrapper hears that the slider has been
-// sent somewhere else (abandonScrollMove). The method is shadowed once per instance, by the first cssMode move
-// or by the resize drift correction, whichever comes first.
+// sent somewhere else (abandonScrollMove). The method is shadowed once per instance, by its first cssMode move.
 //
 // The wheel comes the same way and needs no listener here: in cssMode Swiper puts its own on the wrapper,
 // cancels the native scroll and steps a slide along whichever axis the wheel turned.
@@ -677,16 +673,10 @@ function slideOffset(swiper, index) {
 
 // Ends the cssMode move in flight because something other than a newer slideTo is taking the slider over,
 // and stands its intent down with it: the slider is no longer heading for that slide, so a later resize
-// must not put it there. What the slider held across a layout change (attachResizeDriftCorrection) stands
-// down for the same reason, move or no move.
+// must not put it there.
 function abandonScrollMove(element) {
     const state = element?.__blazorSwiper;
-    if (!state) {
-        return;
-    }
-
-    state.heldAtLayout = null;
-    if (!state.endScrollMove) {
+    if (!state?.endScrollMove) {
         return;
     }
 
@@ -742,79 +732,6 @@ function attachIntendedIndexGuard(element, swiper) {
                 applyAnchor(swiper, state.intendedIndex);
             }
         });
-    });
-}
-
-// A stopgap for https://github.com/nolimits4web/swiper/issues/8246. Upstream
-// https://github.com/nolimits4web/swiper/pull/8250 fixes the "remeasure" half; when re-vendoring a bundle
-// that carries it, keep the "restoreIndex" half until Swiper handles that case too.
-//
-// A layout change moves a cssMode slider's scroller before Swiper's onResize has measured that layout, Swiper
-// reads the scroll against its old slide grid, and onResize then re-seats the slider onto the slide it
-// misread (resizeDriftCorrection). The resize DOM event is dispatched from Swiper's emit ahead of that
-// onResize listener, so it is the one point between the two. For slides sized by CSS, measuring them and
-// reading the position again there hands onResize the right slide. For slides Swiper sizes itself, a clamp or
-// a centered re-snap has moved the scroller, and the index Swiper held when the layout changed is restored
-// instead - with whether it was at the end of its track - taken by an observer of its own that sees the
-// change before Swiper's ResizeObserver-driven resize does. Anything that sends the slider somewhere in
-// between stands both down (abandonScrollMove). A host that forces layout in the same task as the change
-// lets the clamp's scroll reach Swiper before that observer, which is no worse than without it.
-function attachResizeDriftCorrection(element, swiper) {
-    // Swiper wires its scroll handling only for a slider that was in cssMode at init.
-    if (typeof swiper.onScroll !== "function") {
-        return;
-    }
-
-    const state = hostState(element);
-    hookSwiperNavigation(element, swiper);
-
-    let isFirstNotification = true;
-    const layoutObserver = new ResizeObserver(() => {
-        if (!isLiveSwiper(element, swiper)) {
-            layoutObserver.disconnect();
-            return;
-        }
-        // Observing reports the size the slider already has, which is no layout change.
-        if (isFirstNotification) {
-            isFirstNotification = false;
-            return;
-        }
-        state.heldAtLayout = { index: swiper.activeIndex, isEnd: swiper.isEnd };
-    });
-    layoutObserver.observe(swiper.el);
-
-    listen(element, "resize", () => {
-        // A listener left behind by an instance replaced without disposing must not use up what the
-        // replacement holds.
-        if (!isLiveSwiper(element, swiper)) {
-            return;
-        }
-
-        const held = state.heldAtLayout;
-        state.heldAtLayout = null;
-        // onResize skips a slider that is not laid out, and measuring one would only read zeroes.
-        if (swiper.el.offsetWidth === 0) {
-            return;
-        }
-
-        switch (resizeDriftCorrection(swiper.params)) {
-            case "remeasure":
-                swiper.updateSize();
-                swiper.updateSlides();
-                swiper.onScroll();
-                break;
-            case "restoreIndex": {
-                // A move in flight follows its own slide through the resize.
-                const isMoveInFlight = !!state.endScrollMove;
-                if (shouldRestoreIndex(held?.index ?? null, swiper.activeIndex, isMoveInFlight)) {
-                    swiper.updateActiveIndex(held.index);
-                }
-                if (shouldRestoreEnd(held?.isEnd === true, swiper.isEnd, isMoveInFlight)) {
-                    swiper.updateProgress(swiper.maxTranslate());
-                }
-                break;
-            }
-        }
     });
 }
 

@@ -462,7 +462,7 @@ public sealed class SwiperCssModeMoveTests(DemoFixture fixture)
             slider.stage.remove();
             return result;");
 
-        // Assert - the drift correction runs ahead of Swiper's resize handling and must not stand in for it
+        // Assert - nothing of the wrapper's stands in for the resize handling the host turned off
         Assert.Equal(420, result.SizeBeforeResize);
         Assert.Equal(result.SizeBeforeResize, result.SizeAfterResize);
         fixture.AssertNoJsErrors();

@@ -22,8 +22,8 @@
     <PackageIcon>icon.png</PackageIcon>
     <PackageTags>blazor;swiper;carousel;slider;slideshow;touch;swipe;webcomponent</PackageTags>
     <!-- First three parts track the bundled Swiper release; the fourth is this wrapper's own revision. -->
-    <Version>14.3.0</Version>
-    <PackageReleaseNotes>Vendors Swiper 14.3.0 (was 14.0.6) and exposes the parameters it adds: LazyPreload, and FadeEffect.Mode with the new out-in transition. Fixes programmatic moves in cssMode: a new move replaces the one in flight instead of racing it, scroll-snap is always handed back, and the animation clock starts on the second frame so a host re-rendering on the same event still sees the move animate. A cssMode slider resized while it rests or moves now stays on its slide, working around Swiper reading the scroll against its old layout before its own resize handling has run (https://github.com/nolimits4web/swiper/issues/8246). AttachEvents on a slider whose events are already attached no longer doubles Swiper's listeners.</PackageReleaseNotes>
+    <Version>14.4.0</Version>
+    <PackageReleaseNotes>Vendors Swiper 14.4.0 (was 14.0.6) and exposes the parameters 14.3.0 added: LazyPreload, and FadeEffect.Mode with the new out-in transition. Fixes programmatic moves in cssMode: a new move replaces the one in flight instead of racing it, scroll-snap is always handed back, and the animation clock starts on the second frame so a host re-rendering on the same event still sees the move animate. A cssMode slider resized while it rests or moves stays on its slide: Swiper 14.4.0 fixes its own resize handling (https://github.com/nolimits4web/swiper/pull/8250), and an instant SlideTo in cssMode now goes through Swiper's slideTo, so that handling keeps it too. AttachEvents on a slider whose events are already attached no longer doubles Swiper's listeners.</PackageReleaseNotes>
     <PublishRepositoryUrl>true</PublishRepositoryUrl>
     <IncludeSymbols>true</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>

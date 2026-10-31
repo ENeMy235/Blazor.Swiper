@@ -15,9 +15,6 @@ import {
     isSwiperCorrection,
     isSwiperTakingOver,
     snapTypeToHandBack,
-    resizeDriftCorrection,
-    shouldRestoreIndex,
-    shouldRestoreEnd,
     isInitPhaseEvent,
     isHighFrequencyEvent,
     shouldSendThrottledEvent,
@@ -285,85 +282,6 @@ test("SnapTypeToHandBack_StylesheetOrHostValue_IsKept", () => {
     assert.equal(snapTypeToHandBack(""), "");
     assert.equal(snapTypeToHandBack("x proximity"), "x proximity");
     assert.equal(snapTypeToHandBack("x mandatory"), "x mandatory");
-});
-
-test("ResizeDriftCorrection_SlidesSizedByCss_RemeasuresTheReSnappedPosition", () => {
-    // They take their new size before Swiper's resize handling runs, and the browser re-snaps onto them.
-    assert.equal(resizeDriftCorrection({ cssMode: true, slidesPerView: "auto" }), "remeasure");
-    assert.equal(resizeDriftCorrection({ cssMode: true, slidesPerView: "auto", freeMode: { enabled: false } }), "remeasure");
-    // Re-measuring needs no observer of its own, so Swiper's window-resize fallback is enough.
-    assert.equal(resizeDriftCorrection({ cssMode: true, slidesPerView: "auto", resizeObserver: false }), "remeasure");
-});
-
-test("ResizeDriftCorrection_SlidesSizedBySwiper_RestoresTheIndexItHeld", () => {
-    // They keep their size until onResize, so only a clamp moves the scroller, and its position means nothing.
-    assert.equal(resizeDriftCorrection({ cssMode: true, slidesPerView: 1 }), "restoreIndex");
-    assert.equal(resizeDriftCorrection({ cssMode: true, slidesPerView: 2.5 }), "restoreIndex");
-    assert.equal(resizeDriftCorrection({ cssMode: true }), "restoreIndex");
-});
-
-test("ResizeDriftCorrection_SlidesSizedBySwiperWithoutItsResizeObserver_DoesNothing", () => {
-    // The index is taken from an observer that has to see the layout change before Swiper's own resize does.
-    assert.equal(resizeDriftCorrection({ cssMode: true, slidesPerView: 1, resizeObserver: false }), null);
-});
-
-test("ResizeDriftCorrection_FreeMode_DoesNothing", () => {
-    // Free mode does not snap, and its position is whatever the user left it at.
-    assert.equal(resizeDriftCorrection({ cssMode: true, slidesPerView: "auto", freeMode: { enabled: true } }), null);
-    assert.equal(resizeDriftCorrection({ cssMode: true, slidesPerView: 1, freeMode: true }), null);
-});
-
-test("ResizeDriftCorrection_WindowResizeUpdatesOff_DoesNothing", () => {
-    // Swiper then does not re-seat on a resize at all, and the host measures the slider itself.
-    assert.equal(resizeDriftCorrection({ cssMode: true, slidesPerView: "auto", updateOnWindowResize: false }), null);
-    assert.equal(resizeDriftCorrection({ cssMode: true, slidesPerView: 1, updateOnWindowResize: false }), null);
-});
-
-test("ResizeDriftCorrection_WithoutCssMode_DoesNothing", () => {
-    // A transformed track has no scroll position for a layout change to move.
-    assert.equal(resizeDriftCorrection({ cssMode: false, slidesPerView: "auto" }), null);
-    assert.equal(resizeDriftCorrection({ slidesPerView: 1 }), null);
-});
-
-test("ShouldRestoreIndex_SliderOffTheIndexItHeld_IsRestored", () => {
-    assert.equal(shouldRestoreIndex(9, 8, false), true);
-    assert.equal(shouldRestoreIndex(5, 4, false), true);
-    assert.equal(shouldRestoreIndex(5, 6, false), true);
-});
-
-test("ShouldRestoreIndex_FirstSlideHeld_IsRestored", () => {
-    // Slide 0 is falsy.
-    assert.equal(shouldRestoreIndex(0, 1, false), true);
-});
-
-test("ShouldRestoreIndex_SliderStillOnTheIndexItHeld_IsLeftAlone", () => {
-    assert.equal(shouldRestoreIndex(5, 5, false), false);
-});
-
-test("ShouldRestoreIndex_NothingHeld_IsLeftAlone", () => {
-    // No layout change heard, or a navigation since has made the held index stale.
-    assert.equal(shouldRestoreIndex(null, 3, false), false);
-});
-
-test("ShouldRestoreIndex_MoveInFlight_IsLeftAlone", () => {
-    // The move follows its own slide through the resize.
-    assert.equal(shouldRestoreIndex(9, 8, true), false);
-});
-
-test("ShouldRestoreEnd_SliderTakenOffTheEndItHeld_IsRestored", () => {
-    assert.equal(shouldRestoreEnd(true, false, false), true);
-});
-
-test("ShouldRestoreEnd_SliderStillAtTheEnd_IsLeftAlone", () => {
-    assert.equal(shouldRestoreEnd(true, true, false), false);
-});
-
-test("ShouldRestoreEnd_SliderNotAtTheEndWhenTheLayoutChanged_IsLeftAlone", () => {
-    assert.equal(shouldRestoreEnd(false, false, false), false);
-});
-
-test("ShouldRestoreEnd_MoveInFlight_IsLeftAlone", () => {
-    assert.equal(shouldRestoreEnd(true, false, true), false);
 });
 
 test("ChangedOptions_MemberThatMoved_IsTheOnlyOneReported", () => {

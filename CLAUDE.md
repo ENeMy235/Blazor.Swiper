@@ -167,25 +167,20 @@ transformed track, and setting it forces computed `overflow-x` from visible to a
 wrapper into a one-slide-wide clip box that travels with the transform, so every slide but the first
 vanishes.
 
-**A resize can move a cssMode slider onto another slide - in Swiper itself.** A layout change moves the
-wrapper's scroll position before Swiper's resize handling has measured that layout: slides sized by CSS
-are re-snapped onto at their new offset, and a slider that grows past the end of its track is clamped.
-Swiper reads either against its old slide grid, then re-seats onto the slide it misread
-(https://github.com/nolimits4web/swiper/issues/8246). `attachResizeDriftCorrection` works around both,
-and `resizeDriftCorrection` picks how. https://github.com/nolimits4web/swiper/pull/8250 fixes only the
-CSS-sized half upstream, so a re-vendored bundle that carries it retires only the `"remeasure"` half;
-`Resize_CssSizedSlidesAtRest_StaysOnTheSlide` and `Resize_GrowingWhileOnTheLastSlide_StaysOnIt` are the
-proof. The intent guard used to hide all this only because the intent never cleared in cssMode. Centered
-slides Swiper sizes itself are re-snapped rather than clamped, and take the `"restoreIndex"` half too
-(`Resize_CenteredSlidesAtRest_StaysOnTheSlide`). That half restores whether the slider was at the end of
-its track as well (`shouldRestoreEnd`): Swiper's resize keeps a slider with `slidesPerView` above 1 at the
-end only while it knows it is there, so a fractional one would otherwise rest on its last slide's edge with
-that slide cut off. Swiper handles the resize a frame after its ResizeObserver fires, and a move can land
-in that frame - every frame of a width transition is one. Where the scroller sits cannot tell that move
-from a drift (a step back from the last slide lands on the clamped end too, and right to left or under CSS
-zoom the clamp rests a pixel or more off the end), so whatever takes the slider over stands what was held
-down (`abandonScrollMove`); `SlideTo_InstantMoveInTheFrameAfterAResize_EndsOnTheRequestedSlide` holds it
-to that.
+**A resize used to move a cssMode slider onto another slide - in Swiper itself, fixed in 14.4.0.** A
+layout change moves the wrapper's scroll position before Swiper's resize handling has measured that
+layout: slides sized by CSS and centered slides are re-snapped, and a slider that grows past the end of its
+track is clamped. Up to 14.3.0 Swiper read that scroll against its old slide grid and re-seated onto the
+slide it misread (https://github.com/nolimits4web/swiper/issues/8246,
+https://github.com/nolimits4web/swiper/issues/8254). Since
+https://github.com/nolimits4web/swiper/pull/8250 it leaves every scroll in that window to its resize
+handling, which re-seats the slider onto the slide it holds - the wrapper's own scroll writes included.
+Swiper handles the resize a frame after its ResizeObserver fires, and every frame of a width transition is
+such a window. So an instant cssMode `SlideTo` goes through Swiper's `slideTo`, which names its target in
+that window, rather than writing the offset
+(`SlideTo_InstantMoveInTheFrameAfterAResize_EndsOnTheRequestedSlide`); an animated one writes its offset
+every frame and lands after the window anyway (`Resize_DuringAMove_EndsOnTheRequestedSlide`). The other
+`Resize_*` scenarios in `SwiperCssModeMoveTests` are the proof that a vendored bundle carries the fix.
 
 **The element can be gone before `initialize` runs.** A conditionally rendered pager can collapse on
 the very tap that scheduled it, and `await customElements.whenDefined(...)` widens the window

@@ -169,7 +169,7 @@ public sealed class SwiperSurfaceTests : IDisposable
     }
 
     /// <summary>
-    /// Swiper's events, from the type definitions published with Swiper 14.3.0 - the 54 in
+    /// Swiper's events, from the type definitions published with Swiper 14.4.0 - the 54 in
     /// <c>types/events.d.ts</c> plus the 23 the modules add.
     /// </summary>
     /// <remarks>
