@@ -303,6 +303,26 @@ export function isSwiperTakingOver(hasMoved, isNavigationLocked) {
 }
 
 /**
+ * Whether Swiper's `slideTo` would turn a move from `activeIndex` to `index` down.
+ *
+ * The wrapper animates a cssMode move itself rather than through that `slideTo`, so it has to turn down
+ * what Swiper would: any move while the slider is disabled or mid-transition with
+ * `preventInteractionOnTransition`, and a move to another slide in a direction `allowSlideNext` or
+ * `allowSlidePrev` locks.
+ */
+export function isMoveTurnedDown({ enabled, allowSlideNext, allowSlidePrev, isTransitionLocked }, activeIndex, index) {
+    if (!enabled || isTransitionLocked) {
+        return true;
+    }
+
+    if (index > activeIndex) {
+        return !allowSlideNext;
+    }
+
+    return index < activeIndex && !allowSlidePrev;
+}
+
+/**
  * The inline `scroll-snap-type` to hand back when a cssMode move ends, given the one it found.
  *
  * Swiper writes "none" there itself, for a frame around every instant move of a virtual slider and for

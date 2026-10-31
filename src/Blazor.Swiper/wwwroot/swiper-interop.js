@@ -22,6 +22,7 @@ import {
     scrollPositionAt,
     isSwiperCorrection,
     isSwiperTakingOver,
+    isMoveTurnedDown,
     snapTypeToHandBack,
     isInitPhaseEvent,
     isInitOnlyParam,
@@ -511,9 +512,16 @@ export function slideTo(element, index, speed) {
         return;
     }
 
+    // A cssMode move turns down what Swiper's slideTo would, before it ends the move in flight or takes over
+    // its intent: like Swiper's own refusal, a request turned down changes nothing.
+    const mode = navigationMode(swiper.params);
+    if (mode === "scroll" && isMoveTurnedDown(navigationLocks(swiper), swiper.activeIndex, index)) {
+        return;
+    }
+
     hostState(element).intendedIndex = index;
 
-    switch (navigationMode(swiper.params)) {
+    switch (mode) {
         case "scroll":
             scrollToSlide(element, swiper, index, speed);
             break;
@@ -666,9 +674,18 @@ function hookSwiperNavigation(element, swiper) {
 }
 
 // Everything that can make Swiper's slideTo turn a call down - the early returns before it moves anything.
+function navigationLocks(swiper) {
+    return {
+        enabled: swiper.enabled,
+        allowSlideNext: swiper.allowSlideNext,
+        allowSlidePrev: swiper.allowSlidePrev,
+        isTransitionLocked: !!(swiper.animating && swiper.params.preventInteractionOnTransition)
+    };
+}
+
 function isNavigationLocked(swiper) {
-    const isTransitionLocked = swiper.animating && swiper.params.preventInteractionOnTransition;
-    return !swiper.enabled || !swiper.allowSlideNext || !swiper.allowSlidePrev || isTransitionLocked;
+    const locks = navigationLocks(swiper);
+    return !locks.enabled || !locks.allowSlideNext || !locks.allowSlidePrev || locks.isTransitionLocked;
 }
 
 function slideOffset(swiper, index) {

@@ -322,6 +322,62 @@ public sealed class SwiperCssModeMoveTests(DemoFixture fixture)
         fixture.AssertNoJsErrors();
     }
 
+    [Theory]
+    [InlineData("host.swiper.allowSlideNext = false;", 1, 3, 300, 1)]
+    [InlineData("host.swiper.allowSlideNext = false;", 1, 3, 0, 1)]
+    [InlineData("host.swiper.allowSlidePrev = false;", 3, 1, 300, 3)]
+    [InlineData("host.swiper.allowSlidePrev = false;", 3, 1, 0, 3)]
+    [InlineData("host.swiper.disable();", 1, 3, 300, 1)]
+    [InlineData("host.swiper.disable();", 1, 3, 0, 1)]
+    [InlineData("host.swiper.allowSlidePrev = false;", 1, 3, 300, 3)]
+    public async Task SlideTo_DisabledOrLockedThatWay_IsTurnedDownLikeSwipersOwnNavigation(string lockSlider, int fromSlide, int toSlide, int speed, int expectedSlide)
+    {
+        // Arrange - Swiper turns its own navigation down for a disabled slider or one locked in that direction,
+        // and SlideTo outside cssMode with it. Locked the other way, the slider still moves
+        await fixture.NavigateToStoryAsync(CssModeStory, CssModeState);
+
+        // Act
+        var result = await EvaluateAsync($@"
+            interop.slideTo(host, {fromSlide}, 0);
+            await settle();
+            {lockSlider}
+            interop.slideTo(host, {toSlide}, {speed});
+            await settle();
+            return read({{ expectedIndex: {expectedSlide}, expectedScrollLeft: offsetOf({expectedSlide}) }});");
+
+        // Assert
+        Assert.Equal(result.ExpectedIndex, result.RealIndex);
+        Assert.Equal(result.ExpectedScrollLeft, result.ScrollLeft);
+        Assert.Equal(string.Empty, result.InlineSnapType);
+        fixture.AssertNoJsErrors();
+    }
+
+    [Theory]
+    [InlineData(300)]
+    [InlineData(0)]
+    public async Task SlideTo_TurnedDownDuringAMove_LeavesTheMoveRunning(int speed)
+    {
+        // Arrange - stepping back is locked, so the request for the first slide is turned down
+        await fixture.NavigateToStoryAsync(CssModeStory, CssModeState);
+
+        // Act
+        var result = await EvaluateAsync($@"
+            interop.slideTo(host, 1, 0);
+            await settle();
+            interop.slideTo(host, 3, 1000);
+            await wait(150);
+            host.swiper.allowSlidePrev = false;
+            interop.slideTo(host, 0, {speed});
+            await wait(1600);
+            return read({{ expectedIndex: 3, expectedScrollLeft: offsetOf(3) }});");
+
+        // Assert - the request changed nothing, as Swiper's own refusal does, so the move still lands on its slide
+        Assert.Equal(result.ExpectedIndex, result.RealIndex);
+        Assert.Equal(result.ExpectedScrollLeft, result.ScrollLeft);
+        Assert.Equal(string.Empty, result.InlineSnapType);
+        fixture.AssertNoJsErrors();
+    }
+
     [Fact]
     public async Task Resize_DuringAMove_EndsOnTheRequestedSlide()
     {

@@ -14,6 +14,7 @@ import {
     scrollPositionAt,
     isSwiperCorrection,
     isSwiperTakingOver,
+    isMoveTurnedDown,
     snapTypeToHandBack,
     isInitPhaseEvent,
     isHighFrequencyEvent,
@@ -271,6 +272,36 @@ test("IsSwiperTakingOver_NothingToMoveAndNothingLocked_IsTakingOver", () => {
 test("IsSwiperTakingOver_NothingMovedWhileLocked_IsNotTakingOver", () => {
     // Swiper may have turned the call down, and a call it turns down sends the slider nowhere.
     assert.equal(isSwiperTakingOver(false, true), false);
+});
+
+const unlocked = { enabled: true, allowSlideNext: true, allowSlidePrev: true, isTransitionLocked: false };
+
+test("IsMoveTurnedDown_NothingLocked_GoesAhead", () => {
+    assert.equal(isMoveTurnedDown(unlocked, 1, 3), false);
+    assert.equal(isMoveTurnedDown(unlocked, 3, 1), false);
+});
+
+test("IsMoveTurnedDown_LockedInThatDirection_IsTurnedDown", () => {
+    assert.equal(isMoveTurnedDown({ ...unlocked, allowSlideNext: false }, 1, 3), true);
+    assert.equal(isMoveTurnedDown({ ...unlocked, allowSlidePrev: false }, 3, 1), true);
+    // Slide 0 is falsy and still a slide to step back to.
+    assert.equal(isMoveTurnedDown({ ...unlocked, allowSlidePrev: false }, 1, 0), true);
+});
+
+test("IsMoveTurnedDown_LockedTheOtherWay_GoesAhead", () => {
+    assert.equal(isMoveTurnedDown({ ...unlocked, allowSlidePrev: false }, 1, 3), false);
+    assert.equal(isMoveTurnedDown({ ...unlocked, allowSlideNext: false }, 3, 1), false);
+});
+
+test("IsMoveTurnedDown_OntoTheSlideItIsOn_GoesAheadDespiteALock", () => {
+    // Swiper checks the direction locks only for a move to another slide.
+    assert.equal(isMoveTurnedDown({ ...unlocked, allowSlideNext: false, allowSlidePrev: false }, 2, 2), false);
+});
+
+test("IsMoveTurnedDown_DisabledOrMidTransition_IsTurnedDownEitherWay", () => {
+    assert.equal(isMoveTurnedDown({ ...unlocked, enabled: false }, 1, 3), true);
+    assert.equal(isMoveTurnedDown({ ...unlocked, enabled: false }, 2, 2), true);
+    assert.equal(isMoveTurnedDown({ ...unlocked, isTransitionLocked: true }, 3, 1), true);
 });
 
 test("SnapTypeToHandBack_SwipersOwnNone_IsTheStylesheet", () => {
