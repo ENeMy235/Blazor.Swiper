@@ -526,11 +526,15 @@ export function slideTo(element, index, speed) {
     }
 }
 
-// cssMode moves the slider by scrolling the wrapper, and Swiper drives that with a native smooth scroll.
-// That is unusable under scroll-snap: `scroll-snap-type: mandatory` yanks every intermediate position back
-// to a snap point, and any re-render during the scroll cancels it outright, leaving the slider where it
-// started. Writing scrollLeft per frame is cancellable by neither, so the animation completes - unless
-// something else takes the slider over, which the move then steps aside for (below).
+// cssMode moves the slider by scrolling the wrapper, and Swiper's own slideTo animates that with the
+// browser's smooth scroll, which falls short twice (Swiper 14.4.0). The browser picks the duration, so
+// `speed` is ignored. And a layout change that resizes the slider mid-scroll - a re-render that changes a
+// slide's height is enough - has Swiper's resize handling re-seat it onto activeIndex, which in cssMode
+// still names the slide being passed: that instant scroll cancels the smooth one, and the slider stops part
+// of the way there. So an animated move writes scrollLeft itself every frame, with scroll-snap suspended -
+// under `scroll-snap-type: mandatory` each of those writes would be pulled back to a snap point. A re-seat
+// cannot cancel that, so the animation completes - unless something else takes the slider over, which the
+// move then steps aside for (below).
 //
 // There is one move per slider, and a new request ends the one in flight. Left running, the older move
 // keeps writing its own target every frame and can be the one that lands last - a request that finds the
