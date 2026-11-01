@@ -161,7 +161,7 @@ public sealed class SwiperEventTests(DemoFixture fixture)
         var canvas = await fixture.NavigateToStoryAsync(LabStory, "lab-state");
 
         // Act - the arrows and bullets are inside the element's shadow DOM, which Playwright pierces.
-        await canvas.GetByTestId("lab-swiper").Locator("css=.swiper-button-next").ClickAsync();
+        await SwipeHelper.TapAsync(fixture.Page, canvas.GetByTestId("lab-swiper").Locator("css=.swiper-button-next"));
 
         // Assert
         var state = await StoryState.WaitForAsync(

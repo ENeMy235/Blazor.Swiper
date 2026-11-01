@@ -1,0 +1,12 @@
+{
+  "android": {
+    "adb": "C:/Program Files (x86)/Android/android-sdk/platform-tools/adb.exe",
+    "serial": "<adb devices serial>"
+  },
+  "iphone": {
+    "udid": "<iPhone UDID>",
+    "mac": "<user>@<Mac address>",
+    "sshKey": "~/.ssh/<key for the Mac>",
+    "xctestrun": "~/wda/derived/Build/Products/WebDriverAgentRunner_iphoneos<iOS version>-arm64.xctestrun"
+  }
+}

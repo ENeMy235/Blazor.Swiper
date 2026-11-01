@@ -21,6 +21,12 @@ public sealed class DemoFixture : IAsyncLifetime
     private Process? _demoProcess;
     private IPlaywright? _playwright;
 
+    /// <summary>
+    /// A real phone's browser instead of a desktop Chrome: Android's Chrome through <c>adb forward</c>, or an
+    /// iPhone's Safari through a Web Inspector bridge.
+    /// </summary>
+    public static string? DeviceCdpEndpoint => Environment.GetEnvironmentVariable("E2E_CDP_ENDPOINT");
+
     public string BaseUrl { get; private set; } = string.Empty;
     public IBrowser Browser { get; private set; } = null!;
     public IPage Page { get; private set; } = null!;
@@ -40,8 +46,10 @@ public sealed class DemoFixture : IAsyncLifetime
     public async ValueTask InitializeAsync()
     {
         var repositoryRoot = RepositoryRoot;
-        var port = ReserveTcpPort();
-        BaseUrl = $"http://127.0.0.1:{port}";
+        var port = int.TryParse(Environment.GetEnvironmentVariable("E2E_PORT"), out var devicePort) ? devicePort : ReserveTcpPort();
+        // An iPhone has no adb reverse, so it reaches the demo over the local network.
+        var lanHost = Environment.GetEnvironmentVariable("E2E_HOST");
+        BaseUrl = $"http://{lanHost ?? "127.0.0.1"}:{port}";
 
         var startInfo = new ProcessStartInfo("dotnet")
         {
@@ -58,7 +66,7 @@ public sealed class DemoFixture : IAsyncLifetime
         startInfo.ArgumentList.Add("Release");
         startInfo.ArgumentList.Add("--no-launch-profile");
         startInfo.ArgumentList.Add("--urls");
-        startInfo.ArgumentList.Add(BaseUrl);
+        startInfo.ArgumentList.Add(lanHost is null ? BaseUrl : $"http://0.0.0.0:{port}");
         startInfo.Environment["DOTNET_NOLOGO"] = "1";
 
         _demoProcess = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
@@ -72,17 +80,26 @@ public sealed class DemoFixture : IAsyncLifetime
         _demoProcess.BeginOutputReadLine();
         _demoProcess.BeginErrorReadLine();
         await WaitForDemoAsync(TimeSpan.FromMinutes(5));
+        // Safari's Web Inspector cannot open a tab, so the run drives the one opened here. The token tells it
+        // apart from a tab an earlier run left on the same address, which no longer answers.
+        var deviceStartUrl = $"{BaseUrl}/iframe.html?viewMode=story&id=components-swiper--default&e2e={Guid.NewGuid():N}";
+        if (DeviceInput.IsIPhone)
+        {
+            await DeviceInput.OpenUrlAsync(deviceStartUrl);
+        }
 
         _playwright = await Playwright.CreateAsync();
-        Browser = await _playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
-        {
-            // The system Chrome rather than Playwright's bundled Chromium, so neither CI nor a
-            // fresh clone needs a browser download step.
-            Channel = "chrome",
-            Headless = true,
-            Args = ["--disable-dev-shm-usage"]
-        });
-        await CreatePageAsync();
+        Browser = DeviceCdpEndpoint is { } endpoint
+            ? await _playwright.Chromium.ConnectOverCDPAsync(endpoint)
+            : await _playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
+            {
+                // The system Chrome rather than Playwright's bundled Chromium, so neither CI nor a
+                // fresh clone needs a browser download step.
+                Channel = "chrome",
+                Headless = true,
+                Args = ["--disable-dev-shm-usage"]
+            });
+        await CreatePageAsync(deviceStartUrl);
     }
 
     /// <summary>
@@ -93,32 +110,96 @@ public sealed class DemoFixture : IAsyncLifetime
     /// position, a half-finished touch interaction, a slider still settling from the last test.
     /// One page per scenario removes that as a source of intermittent failures.
     /// </remarks>
-    private async Task CreatePageAsync()
+    private async Task CreatePageAsync(string deviceStartUrl)
     {
         if (Page is not null)
         {
+            StopWatchingForErrors(Page);
             await Page.CloseAsync();
         }
 
         // Deliberately no HasTouch. Swiper binds touch listeners when the browser reports touch
         // support and pointer/mouse listeners otherwise, and Playwright's touchscreen can only tap,
         // never drag - so a touch-capable page would make every swipe below silently inert.
-        Page = await Browser.NewPageAsync(new BrowserNewPageOptions
-        {
-            ViewportSize = new ViewportSize { Width = 1280, Height = 1000 }
-        });
-
-        Page.Console += (_, message) =>
-        {
-            if (message.Type == "error" && !IsUnrelatedNoise(message.Text))
+        // On a phone the page keeps the device's own viewport, and Chrome there cannot create contexts.
+        Page = DeviceCdpEndpoint is null
+            ? await Browser.NewPageAsync(new BrowserNewPageOptions
             {
-                lock (_jsErrors) _jsErrors.Add(FirstLine(message.Text));
-            }
-        };
-        Page.PageError += (_, error) =>
+                ViewportSize = new ViewportSize { Width = 1280, Height = 1000 }
+            })
+            : DeviceInput.IsIPhone
+                ? await FindDevicePageAsync(deviceStartUrl)
+                : await Browser.Contexts[0].NewPageAsync();
+
+        WatchForErrors(Page);
+
+        // The first download of the app over Wi-Fi, cut short by the first test's navigation, fails that test
+        // with Safari's "Load failed". Booting it once here leaves every test a cached app.
+        if (DeviceInput.IsIPhone)
         {
-            lock (_jsErrors) _jsErrors.Add(FirstLine(error));
-        };
+            await WaitForSwiperAsync();
+        }
+    }
+
+    private void WatchForErrors(IPage page)
+    {
+        page.Console += OnConsoleMessage;
+        page.PageError += OnPageError;
+    }
+
+    private void StopWatchingForErrors(IPage page)
+    {
+        page.Console -= OnConsoleMessage;
+        page.PageError -= OnPageError;
+    }
+
+    private void OnConsoleMessage(object? sender, IConsoleMessage message)
+    {
+        if (message.Type == "error" && !IsUnrelatedNoise(message.Text))
+        {
+            lock (_jsErrors) _jsErrors.Add(FirstLine(message.Text));
+        }
+    }
+
+    private void OnPageError(object? sender, string error)
+    {
+        lock (_jsErrors) _jsErrors.Add(FirstLine(error));
+    }
+
+    /// <summary>
+    /// The iPhone bridge keeps Playwright's helper world on the previous document after a navigation, so
+    /// element lookups would read the page that was left. A fresh connection gets a fresh one.
+    /// </summary>
+    private async Task ReconnectToDevicePageAsync(string url)
+    {
+        StopWatchingForErrors(Page);
+        _playwright?.Dispose();
+        _playwright = await Playwright.CreateAsync();
+        Browser = await _playwright.Chromium.ConnectOverCDPAsync(DeviceCdpEndpoint!);
+        Page = await FindDevicePageAsync(url);
+        WatchForErrors(Page);
+    }
+
+    /// <summary>Other apps' web views are inspectable too, so the run takes the Safari tab opened on the demo.</summary>
+    private async Task<IPage> FindDevicePageAsync(string url)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(60);
+        while (true)
+        {
+            var page = Browser.Contexts.SelectMany(context => context.Pages).FirstOrDefault(p => p.Url == url);
+            if (page is not null)
+            {
+                return page;
+            }
+
+            if (DateTime.UtcNow > deadline)
+            {
+                var urls = string.Join(", ", Browser.Contexts.SelectMany(context => context.Pages).Select(p => p.Url));
+                throw new TimeoutException($"No inspectable page on {url}; found: {urls}");
+            }
+
+            await Task.Delay(500);
+        }
     }
 
     /// <summary>Fails the current test if the page logged an unhandled JavaScript or Blazor render error.</summary>
@@ -149,15 +230,26 @@ public sealed class DemoFixture : IAsyncLifetime
     {
         if (Page is not null)
         {
-            await Page.CloseAsync();
+            StopWatchingForErrors(Page);
+            if (!DeviceInput.IsIPhone)
+            {
+                await Page.CloseAsync();
+            }
         }
 
-        if (Browser is not null)
+        // A phone's Chrome is the owner's own browser: only the tab opened here is closed.
+        if (Browser is not null && DeviceCdpEndpoint is null)
         {
             await Browser.CloseAsync();
         }
 
         _playwright?.Dispose();
+
+        if (_demoProcess is not null)
+        {
+            _demoProcess.OutputDataReceived -= CaptureServerOutput;
+            _demoProcess.ErrorDataReceived -= CaptureServerOutput;
+        }
 
         if (_demoProcess is { HasExited: false })
         {
@@ -195,21 +287,40 @@ public sealed class DemoFixture : IAsyncLifetime
     public async Task<ILocator> NavigateToStoryAsync(string storyId)
     {
         lock (_jsErrors) _jsErrors.Clear();
+        // A test that resized the viewport leaves a phone's Chrome emulating that size for every later test,
+        // which both lays them out at desktop width and puts real touches in the wrong place.
+        if (DeviceCdpEndpoint is not null && !DeviceInput.IsIPhone)
+        {
+            var session = await Page.Context.NewCDPSessionAsync(Page);
+            await session.SendAsync("Emulation.clearDeviceMetricsOverride");
+            await session.DetachAsync();
+        }
+
         var url = $"{BaseUrl}/iframe.html?viewMode=story&id={storyId}&e2e={Guid.NewGuid():N}";
         await Page.GotoAsync(url, new PageGotoOptions { WaitUntil = WaitUntilState.DOMContentLoaded });
+        if (DeviceInput.IsIPhone)
+        {
+            await ReconnectToDevicePageAsync(url);
+        }
 
-        // Blazor paints the story before OnAfterRenderAsync has imported the interop module and
-        // called element.initialize(). A swipe started in that window is silently inert, and the
-        // slider is still hidden, so wait for Swiper itself rather than for Blazor's first paint.
-        await Page.WaitForFunctionAsync(
+        await WaitForSwiperAsync();
+        return Page.Locator("body");
+    }
+
+    /// <remarks>
+    /// Blazor paints the story before OnAfterRenderAsync has imported the interop module and
+    /// called element.initialize(). A swipe started in that window is silently inert, and the
+    /// slider is still hidden, so wait for Swiper itself rather than for Blazor's first paint.
+    /// </remarks>
+    private Task WaitForSwiperAsync()
+    {
+        return Page.WaitForFunctionAsync(
             @"() => {
                 const containers = Array.from(document.querySelectorAll('swiper-container'));
                 return containers.length > 0 && containers.every(c => c.swiper && c.swiper.initialized);
             }",
             null,
             new PageWaitForFunctionOptions { Timeout = 60_000 });
-
-        return Page.Locator("body");
     }
 
     /// <summary>Reads a Swiper parameter off a slider, as Swiper itself resolved it.</summary>

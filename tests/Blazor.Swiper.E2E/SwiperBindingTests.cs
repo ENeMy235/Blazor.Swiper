@@ -147,7 +147,7 @@ public sealed class SwiperBindingTests(DemoFixture fixture)
         var canvas = await fixture.NavigateToStoryAsync("components-swiper-recipes--thumbnail-gallery", "gallery-state");
 
         // Act
-        await canvas.GetByTestId("gallery-thumbs").Locator("css=swiper-slide").Nth(2).ClickAsync();
+        await SwipeHelper.TapAsync(fixture.Page, canvas.GetByTestId("gallery-thumbs").Locator("css=swiper-slide").Nth(2));
 
         // Assert
         await StoryState.WaitForAsync(
@@ -166,7 +166,7 @@ public sealed class SwiperBindingTests(DemoFixture fixture)
         var canvas = await fixture.NavigateToStoryAsync("components-swiper-recipes--synced-sliders", "controller-state");
 
         // Act
-        await canvas.GetByTestId("controller-swiper").Locator("css=.swiper-button-next").ClickAsync();
+        await SwipeHelper.TapAsync(fixture.Page, canvas.GetByTestId("controller-swiper").Locator("css=.swiper-button-next"));
 
         // Assert
         await StoryState.WaitForAsync(
@@ -292,6 +292,8 @@ public sealed class SwiperBindingTests(DemoFixture fixture)
     [Fact]
     public async Task Keyboard_ArrowKey_MovesTheSliderUntilTheModuleIsDisabled()
     {
+        Assert.SkipWhen(DeviceInput.IsIPhone, "An iPhone has no arrow keys to press.");
+
         // Arrange
         var canvas = await fixture.NavigateToStoryAsync("components-swiper-modules--keyboard", "keyboard-state");
         await canvas.GetByTestId("keyboard-swiper").ClickAsync();

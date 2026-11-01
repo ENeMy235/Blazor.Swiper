@@ -13,6 +13,15 @@ dotnet test tests/Blazor.Swiper.E2E/Blazor.Swiper.E2E.csproj -c Release
 No Playwright browser download is needed. Google Chrome must be installed and discoverable by
 Playwright's `chrome` channel.
 
+The same suite also runs on a real Android phone or iPhone, with real touch and real rotation:
+
+```powershell
+pwsh .claude/skills/phone-e2e/run-on-phone.ps1 -Phone android
+```
+
+`.claude/skills/phone-e2e/SKILL.md` covers the setup, the variables the fixture reads, and which
+results are expected on a phone. `DeviceScenarioTests` needs a phone and is skipped without one.
+
 ## What this suite is for
 
 bUnit stubs `swiper-interop.js` out entirely, so the unit suite never runs a line of it. Everything

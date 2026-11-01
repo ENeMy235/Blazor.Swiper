@@ -69,6 +69,9 @@ This matters more than it sounds, and it is why there are three suites rather th
 - **Only a browser sees the rest**: the `<swiper-container>` custom element upgrading, the reveal
   handshake, cssMode scrolling under scroll-snap, the autoHeight `ResizeObserver`, `ArmAnchor`'s
   same-frame guarantee, and any real swipe.
+- **Only a real phone sees a finger, a rotation and iOS WebKit.** Desktop Chrome passed a resize fix
+  that the iPhone failed, because WebKit delivers the clamped scroll before the `ResizeObserver`.
+  The `phone-e2e` skill (`.claude/skills/phone-e2e/`) runs the e2e suite on a phone.
 - **The console is part of the assertion.** The slider can land on the right slide while the interop
   threw on the way there, and the index alone still reads correctly. Every e2e scenario calls
   `AssertNoJsErrors`.

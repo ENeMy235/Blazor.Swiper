@@ -37,7 +37,7 @@ public sealed class SwiperOptionsTests(DemoFixture fixture)
         var canvas = await fixture.NavigateToStoryAsync("components-swiper--slides-per-group", "group-state");
 
         // Act - the navigation arrows live in the element's shadow DOM, which Playwright pierces.
-        await canvas.GetByTestId("group-swiper").Locator("css=.swiper-button-next").ClickAsync();
+        await SwipeHelper.TapAsync(fixture.Page, canvas.GetByTestId("group-swiper").Locator("css=.swiper-button-next"));
 
         // Assert - a group of three means one press travels three slides, not one.
         var state = await StoryState.WaitForAsync(
@@ -118,6 +118,8 @@ public sealed class SwiperOptionsTests(DemoFixture fixture)
     [Fact]
     public async Task Breakpoints_ViewportResized_SwapsTheParametersInForce()
     {
+        Assert.SkipWhen(DeviceInput.IsIPhone, "Safari's Web Inspector cannot resize the page.");
+
         // Arrange
         var canvas = await fixture.NavigateToStoryAsync("components-swiper--breakpoints", "breakpoint-state");
 
@@ -371,6 +373,8 @@ public sealed class SwiperOptionsTests(DemoFixture fixture)
     [Fact]
     public async Task Mousewheel_OrdinaryVerticalWheel_MovesTheSlider()
     {
+        Assert.SkipWhen(DeviceInput.IsIPhone, "An iPhone has no mouse wheel to turn.");
+
         // Arrange
         var canvas = await fixture.NavigateToStoryAsync("components-swiper-modules--mousewheel", "mousewheel-state");
         var slider = canvas.GetByTestId("mousewheel-swiper");
@@ -397,6 +401,8 @@ public sealed class SwiperOptionsTests(DemoFixture fixture)
     [Fact]
     public async Task Mousewheel_ForceToAxis_IgnoresAVerticalWheelOnAHorizontalSlider()
     {
+        Assert.SkipWhen(DeviceInput.IsIPhone, "An iPhone has no mouse wheel to turn.");
+
         // Arrange
         var canvas = await fixture.NavigateToStoryAsync("components-swiper-modules--mousewheel", "mousewheel-axis-state");
         var slider = canvas.GetByTestId("mousewheel-axis-swiper");

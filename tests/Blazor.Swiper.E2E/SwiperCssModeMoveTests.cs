@@ -961,13 +961,18 @@ public sealed class SwiperCssModeMoveTests(DemoFixture fixture)
         var slider = canvas.GetByTestId("css-mode-swiper");
 
         // Act - a real pointer drag, so it is Swiper that raises sliderFirstMove and not the scenario.
-        // The drag is over well before the move would have finished by itself.
+        // The move is long enough that the drag is over well before it would have finished by itself, even
+        // on an iPhone, where a real touch starts over a second after it is asked for. It drags back against
+        // the move: on a phone the finger really scrolls the slider, and a drag forward would carry it on to
+        // the very slide the move was heading for.
         var beforeDrag = await EvaluateAsync(@"
-            interop.slideTo(host, 4, 1500);
+            window.e2eSnapTypeAtTouch = null;
+            wrapper.addEventListener('pointerdown', () => { window.e2eSnapTypeAtTouch ??= wrapper.style.scrollSnapType; }, { capture: true });
+            interop.slideTo(host, 4, 4000);
             await wait(250);
             return read();");
-        await SwipeHelper.SwipeLeftAsync(fixture.Page, slider);
-        var afterDrag = await EvaluateAsync("return read();");
+        await SwipeHelper.SwipeRightAsync(fixture.Page, slider);
+        var afterDrag = await EvaluateAsync("return read({ snapTypeAtTouch: window.e2eSnapTypeAtTouch });");
         var result = await EvaluateAsync(@"
             await wait(2000);
             return read({
@@ -975,9 +980,11 @@ public sealed class SwiperCssModeMoveTests(DemoFixture fixture)
                 otherSlideScrollLeft: offsetOf(4)
             });");
 
-        // Assert - snapping is back at once rather than when the move would have finished, and
-        // the slider rests on a slide that is not the one the move was heading for
+        // Assert - the finger landed while the move was still running, snapping is back at once rather than
+        // when the move would have finished, and the slider rests on a slide that is not the one the move was
+        // heading for
         Assert.Equal("none", beforeDrag.InlineSnapType);
+        Assert.Equal("none", afterDrag.SnapTypeAtTouch);
         Assert.Equal(string.Empty, afterDrag.InlineSnapType);
         Assert.Contains(result.ScrollLeft, result.SlideOffsets ?? []);
         Assert.NotEqual(result.OtherSlideScrollLeft, result.ScrollLeft);
@@ -1180,5 +1187,6 @@ public sealed class SwiperCssModeMoveTests(DemoFixture fixture)
         int? ResizesBeforeMove,
         int? ResizesAfterMove,
         int? EndScrollLeft,
-        bool? IsEnd);
+        bool? IsEnd,
+        string? SnapTypeAtTouch);
 }
