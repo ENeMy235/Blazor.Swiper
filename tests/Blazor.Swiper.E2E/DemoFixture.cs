@@ -287,15 +287,6 @@ public sealed class DemoFixture : IAsyncLifetime
     public async Task<ILocator> NavigateToStoryAsync(string storyId)
     {
         lock (_jsErrors) _jsErrors.Clear();
-        // A test that resized the viewport leaves a phone's Chrome emulating that size for every later test,
-        // which both lays them out at desktop width and puts real touches in the wrong place.
-        if (DeviceCdpEndpoint is not null && !DeviceInput.IsIPhone)
-        {
-            var session = await Page.Context.NewCDPSessionAsync(Page);
-            await session.SendAsync("Emulation.clearDeviceMetricsOverride");
-            await session.DetachAsync();
-        }
-
         var url = $"{BaseUrl}/iframe.html?viewMode=story&id={storyId}&e2e={Guid.NewGuid():N}";
         await Page.GotoAsync(url, new PageGotoOptions { WaitUntil = WaitUntilState.DOMContentLoaded });
         if (DeviceInput.IsIPhone)

@@ -73,9 +73,10 @@ rebuilding and re-signing it on the Mac.
 
 These results are expected and are not bugs in the wrapper or in Swiper:
 
+- **Skipped on both phones:** the breakpoints test, which resizes the page. Desktop runs cover it.
 - **Skipped on the iPhone, with the reason in the skip message:** both mouse-wheel tests, the arrow-key
-  test, the breakpoints test (Safari's Web Inspector cannot resize the page) and the two quick taps on
-  the story button (the iPhone's taps land too far apart to catch its 300 ms move).
+  test and the two quick taps on the story button (the iPhone's taps land too far apart to catch its
+  300 ms move).
 - **`SwiperStorySweepTests` overflow failures on the iPhone:** the demo stories sit in fixed-width boxes
   (`width: 420px`, coverflow 520px, creative 360px plus padding), and Safari's page is 414px wide with a
   16px body margin. The cards effect stacks its cards outside the slider by design. The Pixel's page is
@@ -94,8 +95,10 @@ These results are expected and are not bugs in the wrapper or in Swiper:
   so a test must never navigate with `Page.GotoAsync` itself.
 - **The bridge cannot open a tab,** so the fixture opens the demo through WebDriverAgent and tells its
   tab apart by a token in the URL.
-- **On Android, a viewport resize sticks to Chrome for every later test.** The fixture clears it on each
-  navigation.
+- 🛑 **Never resize the page in a test that runs on a phone.** Android's Chrome then lays out every later
+  test at that size, so the real touches miss their targets; clearing the override does not hold, since
+  Playwright applies its viewport again. Safari's Web Inspector cannot resize the page at all. Skip such a
+  test with `Assert.SkipWhen(DeviceInput.IsActive, ...)`.
 - 🛑 **WebDriverAgent cannot play several taps in one request.** It plays the time between two touches of
   one action sequence as a few milliseconds, whatever pauses it holds, and iOS then clicks only the last
   tap or none. `DeviceInput.TapAsync` sends each tap in a request of its own, and they land about 600 ms

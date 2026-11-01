@@ -118,7 +118,7 @@ public sealed class SwiperOptionsTests(DemoFixture fixture)
     [Fact]
     public async Task Breakpoints_ViewportResized_SwapsTheParametersInForce()
     {
-        Assert.SkipWhen(DeviceInput.IsIPhone, "Safari's Web Inspector cannot resize the page.");
+        Assert.SkipWhen(DeviceInput.IsActive, "A phone's page cannot be resized for one test: Safari's Web Inspector cannot resize it, and Android's Chrome keeps the size for every later test.");
 
         // Arrange
         var canvas = await fixture.NavigateToStoryAsync("components-swiper--breakpoints", "breakpoint-state");
